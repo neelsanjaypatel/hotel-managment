@@ -43,7 +43,7 @@ export default async function PlatformHotelPage({ params }: PageProps<"/platform
 
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="Plan" value={plan?.name ?? "-"} hint={plan ? `${rupees(plan.priceMonthly)} / month` : undefined} />
-        <Stat label={hotel.status === "trial" ? "Trial ends" : "Paid until"} value={access.endsOn ? prettyDate(access.endsOn) : "-"} />
+        <Stat label={hotel.paidUntil ? "Paid until" : "Trial ends"} value={access.endsOn ? prettyDate(access.endsOn) : "-"} />
         <Stat label="Employees" value={`${emp.n}${plan?.maxEmployees ? ` / ${plan.maxEmployees}` : ""}`} />
         <Stat label="Owner" value={owners[0]?.name ?? "-"} hint={owners[0]?.login} />
       </div>

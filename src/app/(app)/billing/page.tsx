@@ -43,7 +43,7 @@ export default async function BillingPage() {
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="Current plan" value={plan?.name ?? "-"} hint={plan ? `${rupees(plan.priceMonthly)} / month` : undefined} />
         <Stat
-          label={a.state === "trial" ? "Trial ends" : "Paid until"}
+          label={user.hotel.paidUntil ? "Paid until" : "Trial ends"}
           value={a.endsOn ? prettyDate(a.endsOn) : "-"}
           tone={a.state === "expired" || a.state === "grace" || a.state === "suspended" ? "out" : undefined}
         />
