@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requirePage, can } from "@/lib/auth";
 import { bookingsBetween } from "@/lib/bookings";
-import { addDays, bookingNo, monthBounds, prettyDate, prettyMonth, rupees, todayIST, SLOT_LABEL, UNIT_LABEL } from "@/lib/format";
+import { addDays, bookingNo, monthBounds, prettyDate, prettyMonth, rupees, todayIST, SLOT_LABEL, UNIT_LABEL, isMonth } from "@/lib/format";
 import { Card, Empty, PageHeader, Stat } from "@/components/ui";
 import { PeriodPicker } from "@/components/forms";
 import { BookingBadge } from "@/components/booking-badge";
@@ -20,7 +20,7 @@ export default async function BookingsPage({ searchParams }: PageProps<"/booking
   if (user.role === "employee") return null;
   const sp = await searchParams;
   const today = todayIST();
-  const month = typeof sp.month === "string" && /^\d{4}-\d{2}$/.test(sp.month) ? sp.month : today.slice(0, 7);
+  const month = isMonth(sp.month) ? sp.month : today.slice(0, 7);
   const { from, to } = monthBounds(month);
 
   const [inMonth, upcoming] = await Promise.all([

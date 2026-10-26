@@ -3,7 +3,7 @@ import { cache } from "react";
 import { createHash, randomBytes } from "node:crypto";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { and, eq, gt } from "drizzle-orm";
+import { and, eq, gt, lt } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { getDb, schema } from "@/db";
 import type { Hotel, Role } from "@/db/schema";
@@ -62,7 +62,27 @@ export async function startSession(userId: number) {
   });
 }
 
+// Slows down password guessing: after 5 wrong tries a login is locked for 15 minutes.
+// Kept in memory, so it is per server instance; enough to stop casual brute force.
+const FAIL_LIMIT = 5;
+const LOCK_MS = 15 * 60 * 1000;
+const failures = new Map<string, { count: number; until: number }>();
+
+export function loginLocked(loginId: string) {
+  const f = failures.get(loginId.trim().toLowerCase());
+  return !!f && f.count >= FAIL_LIMIT && f.until > Date.now();
+}
+
+function noteFailure(loginId: string) {
+  const key = loginId.trim().toLowerCase();
+  const f = failures.get(key);
+  const fresh = !f || f.until <= Date.now();
+  failures.set(key, { count: fresh ? 1 : f.count + 1, until: Date.now() + LOCK_MS });
+  if (failures.size > 10_000) failures.clear();
+}
+
 export async function login(loginId: string, password: string): Promise<boolean> {
+  if (loginLocked(loginId)) return false;
   const db = await getDb();
   const [u] = await db
     .select()
@@ -70,7 +90,13 @@ export async function login(loginId: string, password: string): Promise<boolean>
     .where(and(eq(schema.users.login, loginId.trim()), eq(schema.users.active, true)));
   // Compare against a dummy hash when the user is missing so timing does not leak which logins exist.
   const ok = await bcrypt.compare(password, u?.passwordHash ?? (DUMMY_HASH ??= bcrypt.hashSync("-", 10)));
-  if (!u || !ok) return false;
+  if (!u || !ok) {
+    noteFailure(loginId);
+    return false;
+  }
+  failures.delete(loginId.trim().toLowerCase());
+  // Drop this user's expired sessions so the table does not grow forever.
+  await db.delete(schema.sessions).where(and(eq(schema.sessions.userId, u.id), lt(schema.sessions.expiresAt, new Date())));
   await startSession(u.id);
   return true;
 }

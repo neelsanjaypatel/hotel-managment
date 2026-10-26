@@ -29,10 +29,15 @@ export function hotelAccess(h: Pick<Hotel, "status" | "trialEndsAt" | "paidUntil
 // if it is still in the future, otherwise starts today.
 export function extendPeriod(paidUntil: string | null, today: string, months: number) {
   const start = paidUntil && paidUntil >= today ? addDay(paidUntil) : today;
-  const d = new Date(start + "T00:00:00Z");
-  d.setUTCMonth(d.getUTCMonth() + months);
-  d.setUTCDate(d.getUTCDate() - 1);
-  return { from: start, to: d.toISOString().slice(0, 10) };
+  const [y, m, day] = start.split("-").map(Number);
+  // Same day N months later, minus one day. When that month is shorter (31 Jan + 1 month),
+  // the period runs to the end of that month instead of spilling into the next one.
+  const lastOfTarget = new Date(Date.UTC(y, m - 1 + months + 1, 0)).getUTCDate();
+  const end =
+    day > lastOfTarget
+      ? new Date(Date.UTC(y, m - 1 + months, lastOfTarget))
+      : new Date(Date.UTC(y, m - 1 + months, day - 1));
+  return { from: start, to: end.toISOString().slice(0, 10) };
 }
 
 function addDay(date: string) {

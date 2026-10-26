@@ -2,12 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, lt, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getDb, schema } from "@/db";
-import { hashPassword, login, logout, requireAction, type HotelUser } from "./auth";
+import { hashPassword, login, loginLocked, logout, requireAction, type HotelUser } from "./auth";
 import { addDays, isISODate, toPaise, todayIST } from "./format";
-import { UserError, amount, audit, checkEntryDate, fail, ok, owned, run, str, type FormState } from "./action-helpers";
+import { UserError, amount, audit, checkEntryDate, fail, isUniqueViolation, ok, owned, run, str, type FormState } from "./action-helpers";
 import type { AttendanceStatus } from "@/db/schema";
 
 export type { FormState } from "./action-helpers";
@@ -15,8 +15,9 @@ export type { FormState } from "./action-helpers";
 // ---------- auth ----------
 
 export async function loginAction(_: FormState, fd: FormData): Promise<FormState> {
-  const ok = await login(String(fd.get("login") ?? ""), String(fd.get("password") ?? ""));
-  if (!ok) return fail("Wrong login or password.");
+  const loginId = String(fd.get("login") ?? "");
+  const ok = await login(loginId, String(fd.get("password") ?? ""));
+  if (!ok) return fail(loginLocked(loginId) ? "Too many wrong tries. Please wait 15 minutes." : "Wrong login or password.");
   redirect("/");
 }
 
@@ -38,6 +39,10 @@ export async function addSale(_: FormState, fd: FormData): Promise<FormState> {
     const date = await checkEntryDate(user, fd.get("date"));
     const p = saleSchema.safeParse({ unit: fd.get("unit"), mode: fd.get("mode") });
     if (!p.success) throw new UserError("Pick section and payment mode.");
+    const h = user.hotel;
+    if (!(p.data.unit === "restaurant" ? h.hasRestaurant : p.data.unit === "rooms" ? h.hasRooms : h.hasBanquet)) {
+      throw new UserError("This section is not enabled for your hotel.");
+    }
     const db = await getDb();
     let partyId: number | null = null;
     if (p.data.mode === "zomato" || p.data.mode === "swiggy") {
@@ -144,13 +149,22 @@ const ENTRY_TABLES = {
 export async function deleteEntry(kind: keyof typeof ENTRY_TABLES, id: number): Promise<FormState> {
   return run(async () => {
     const user = await requireAction("enterCounter");
+    if (!Object.hasOwn(ENTRY_TABLES, kind) || !Number.isInteger(id)) throw new UserError("Unknown entry.");
     const table = ENTRY_TABLES[kind];
-    if (!table) throw new UserError("Unknown entry.");
     const db = await getDb();
     const where = and(eq(table.id, id), eq(table.hotelId, user.hotelId));
     const [row] = await db.select().from(table).where(where);
     if (!row) throw new UserError("Entry not found.");
     if (user.role !== "admin" && row.createdBy !== user.id) throw new UserError("You can delete only your own entries.");
+    // Booking bills and refunds are posted by the booking itself; removing one here would leave
+    // the booking saying "completed" or "cancelled" with the money gone. Advances on an open
+    // booking can still be removed to fix a typo.
+    if ("bookingId" in row && row.bookingId) {
+      const [b] = await db.select().from(schema.bookings).where(eq(schema.bookings.id, row.bookingId));
+      if (kind === "sale" || !b || b.status === "completed" || b.status === "cancelled") {
+        throw new UserError("This entry belongs to a closed booking and cannot be deleted here.");
+      }
+    }
     await checkEntryDate(user, row.date);
     await db.delete(table).where(where);
     await audit(user, "delete", kind, id, row);
@@ -171,9 +185,23 @@ export async function closeDay(_: FormState, fd: FormData): Promise<FormState> {
       .update(schema.dayBooks)
       .set({ countedCash: counted, cashDeposit: deposit, status: "closed", closedBy: user.id, closedAt: new Date(), note: str(fd, "note") })
       .where(and(eq(schema.dayBooks.hotelId, user.hotelId), eq(schema.dayBooks.date, date)));
-    await audit(user, "close_day", "day", date, { counted, deposit });
+    // The next day's opening cash was copied when that day was first opened; if this day
+    // is closed after that (late close, or reopened and re-closed) carry the new count forward.
+    const [next] = await db
+      .select()
+      .from(schema.dayBooks)
+      .where(and(eq(schema.dayBooks.hotelId, user.hotelId), gt(schema.dayBooks.date, date)))
+      .orderBy(asc(schema.dayBooks.date))
+      .limit(1);
+    if (next && next.openingCash !== counted) {
+      await db
+        .update(schema.dayBooks)
+        .set({ openingCash: counted })
+        .where(and(eq(schema.dayBooks.hotelId, user.hotelId), eq(schema.dayBooks.date, next.date)));
+    }
+    await audit(user, "close_day", "day", date, { counted, deposit, nextDay: next?.date, nextOpeningWas: next?.openingCash });
     revalidatePath("/", "layout");
-    return ok("Day closed.");
+    return ok(next && next.openingCash !== counted ? `Day closed. Opening cash of ${next.date} updated to match.` : "Day closed.");
   });
 }
 
@@ -200,6 +228,13 @@ export async function setOpeningCash(_: FormState, fd: FormData): Promise<FormSt
     const cash = toPaise(fd.get("openingCash"));
     if (cash == null) throw new UserError("Enter the opening cash.");
     const db = await getDb();
+    // After any day is closed, opening cash comes from the previous day's count.
+    const [closedBefore] = await db
+      .select({ date: schema.dayBooks.date })
+      .from(schema.dayBooks)
+      .where(and(eq(schema.dayBooks.hotelId, user.hotelId), eq(schema.dayBooks.status, "closed"), lt(schema.dayBooks.date, date)))
+      .limit(1);
+    if (closedBefore) throw new UserError("Opening cash is set only for the first day. Later days take it from the previous day's count.");
     await db
       .update(schema.dayBooks)
       .set({ openingCash: cash })
@@ -293,8 +328,9 @@ export async function saveEmployee(_: FormState, fd: FormData): Promise<FormStat
     const active = fd.get("active") !== "off";
     const db = await getDb();
     const id = Number(fd.get("id")) || null;
-    if (id) await owned(schema.employees, id, user.hotelId, "employee");
-    if (!id) {
+    const existing = id ? await owned(schema.employees, id, user.hotelId, "employee") : null;
+    // New employee, or an inactive one being made active again, takes a plan slot.
+    if (active && (!existing || !existing.active)) {
       const plan = await planLimits(user);
       if (plan?.maxEmployees != null && (await countWhere(schema.employees, user.hotelId)) >= plan.maxEmployees) {
         throw new UserError(`Your ${plan.name} plan allows ${plan.maxEmployees} employees. Upgrade from Billing to add more.`);
@@ -310,7 +346,7 @@ export async function saveEmployee(_: FormState, fd: FormData): Promise<FormStat
         await audit(user, "create", "employee", row.id, values);
       }
     } catch (e) {
-      if (String(e).includes("unique") || String(e).includes("duplicate")) throw new UserError("That employee code is already used.");
+      if (isUniqueViolation(e)) throw new UserError("That employee code is already used.");
       throw e;
     }
     revalidatePath("/", "layout");
@@ -344,7 +380,7 @@ export async function saveUser(_: FormState, fd: FormData): Promise<FormState> {
         .returning({ id: schema.users.id });
       await audit(admin, "create", "user", row.id, { name, login: loginId, role: role.data });
     } catch (e) {
-      if (String(e).includes("unique") || String(e).includes("duplicate")) throw new UserError("That login is already taken. Try a phone number.");
+      if (isUniqueViolation(e)) throw new UserError("That login is already taken. Try a phone number.");
       throw e;
     }
     revalidatePath("/settings");
@@ -356,7 +392,13 @@ export async function setUserActive(userId: number, active: boolean): Promise<Fo
   return run(async () => {
     const admin = await requireAction("manageMaster");
     if (userId === admin.id) throw new UserError("You cannot disable your own login.");
-    await owned(schema.users, userId, admin.hotelId, "login");
+    const target = await owned(schema.users, userId, admin.hotelId, "login");
+    if (active && !target.active) {
+      const plan = await planLimits(admin);
+      if (plan?.maxUsers != null && (await countWhere(schema.users, admin.hotelId)) >= plan.maxUsers) {
+        throw new UserError(`Your ${plan.name} plan allows ${plan.maxUsers} logins. Upgrade from Billing to add more.`);
+      }
+    }
     const db = await getDb();
     await db.update(schema.users).set({ active }).where(and(eq(schema.users.id, userId), eq(schema.users.hotelId, admin.hotelId)));
     if (!active) await db.delete(schema.sessions).where(eq(schema.sessions.userId, userId));

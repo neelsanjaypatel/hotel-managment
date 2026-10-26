@@ -7,7 +7,7 @@ import { z } from "zod";
 import { getDb, schema } from "@/db";
 import { requireAction, type HotelUser } from "./auth";
 import { addDays, bookingNo, isISODate, toPaise, todayIST } from "./format";
-import { UserError, amount, audit, checkEntryDate, ok, owned, run, str, type FormState } from "./action-helpers";
+import { UserError, amount, audit, checkEntryDate, isUniqueViolation, ok, owned, run, str, type FormState } from "./action-helpers";
 import { ensureDay } from "./ledger";
 
 const { bookings, receipts, sales, parties } = schema;
@@ -137,7 +137,9 @@ export async function createBooking(_: FormState, fd: FormData): Promise<FormSta
     const mode = advance > 0 ? payMode(fd, "advanceMode") : null;
 
     const db = await getDb();
-    const booking = await db.transaction(async (tx) => {
+    // Booking numbers are max + 1 per hotel; if two bookings are saved at the same moment
+    // the second hits the unique index, so try again with the next number.
+    const save = () => db.transaction(async (tx) => {
       const [party] = await tx
         .insert(parties)
         .values({ hotelId: user.hotelId, name: customer, kind: d.unit === "rooms" ? "credit" : "banquet", phone })
@@ -164,6 +166,15 @@ export async function createBooking(_: FormState, fd: FormData): Promise<FormSta
       }
       return b;
     });
+    let booking: Awaited<ReturnType<typeof save>> | undefined;
+    for (let attempt = 0; !booking; attempt++) {
+      try {
+        booking = await save();
+      } catch (e) {
+        if (attempt < 3 && isUniqueViolation(e)) continue;
+        throw e;
+      }
+    }
     await audit(user, "create", "booking", booking.id, { ...booking, advance });
     newId = booking.id;
     revalidatePath("/", "layout");
@@ -179,12 +190,12 @@ export async function updateBooking(_: FormState, fd: FormData): Promise<FormSta
     const b = await loadBooking(user, Number(fd.get("id")));
     if (b.status === "completed" || b.status === "cancelled") throw new UserError("This booking is closed and cannot be changed.");
     const d = readDetails(user, fd);
+    const phone = str(fd, "phone");
+    if (phone && !/^\d{10}$/.test(phone)) throw new UserError("Phone must be a 10-digit number.");
     const clash = await findClash(user.hotelId, d, b.id);
     if (clash) throw new UserError(`${d.venue} is already booked: ${bookingNo(clash.number)} ${clash.title} on ${clash.date}.`);
     const db = await getDb();
     await db.update(bookings).set(d).where(and(eq(bookings.id, b.id), eq(bookings.hotelId, user.hotelId)));
-    const phone = str(fd, "phone");
-    if (phone && !/^\d{10}$/.test(phone)) throw new UserError("Phone must be a 10-digit number.");
     await db.update(parties).set({ phone }).where(and(eq(parties.id, b.partyId), eq(parties.hotelId, user.hotelId)));
     await audit(user, "update", "booking", b.id, d);
     revalidatePath("/", "layout");

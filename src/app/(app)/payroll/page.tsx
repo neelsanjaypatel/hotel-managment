@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requirePage } from "@/lib/auth";
 import { monthPayroll } from "@/lib/payroll";
-import { monthBounds, prettyMonth, rupees, todayIST } from "@/lib/format";
+import { monthBounds, prettyMonth, rupees, todayIST, isMonth } from "@/lib/format";
 import { Card, PageHeader, Stat } from "@/components/ui";
 import { PeriodPicker } from "@/components/forms";
 
@@ -11,7 +11,7 @@ export default async function PayrollPage({ searchParams }: PageProps<"/payroll"
   const user = await requirePage("viewPayroll");
   const sp = await searchParams;
   const thisMonth = todayIST().slice(0, 7);
-  const month = typeof sp.month === "string" && /^\d{4}-\d{2}$/.test(sp.month) ? sp.month : thisMonth;
+  const month = isMonth(sp.month) ? sp.month : thisMonth;
   const rows = await monthPayroll(user.hotelId, month);
   const sum = (k: "earned" | "advance" | "wagesPaid" | "net") => rows.reduce((a, r) => a + r[k], 0);
   const { days } = monthBounds(month);

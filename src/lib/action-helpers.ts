@@ -25,6 +25,14 @@ export async function run(fn: () => Promise<FormState>): Promise<FormState> {
 
 export class UserError extends Error {}
 
+// Postgres unique_violation. Drizzle wraps the driver error, so the code is on `cause`.
+export function isUniqueViolation(e: unknown): boolean {
+  for (let x = e as { code?: string; cause?: unknown } | undefined, i = 0; x && i < 5; x = x.cause as typeof x, i++) {
+    if (x.code === "23505") return true;
+  }
+  return false;
+}
+
 export async function audit(user: HotelUser, action: string, entity: string, entityId: string | number, data?: unknown) {
   const db = await getDb();
   await db.insert(schema.auditLog).values({ hotelId: user.hotelId, userId: user.id, action, entity, entityId: String(entityId), data: data ?? null });

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requirePage } from "@/lib/auth";
 import { dayRows } from "@/lib/ledger";
-import { monthBounds, prettyDate, prettyMonth, rupees, todayIST } from "@/lib/format";
+import { monthBounds, prettyDate, prettyMonth, rupees, todayIST, isMonth } from "@/lib/format";
 import { Badge, Card, PageHeader } from "@/components/ui";
 import { PeriodPicker } from "@/components/forms";
 
@@ -11,7 +11,7 @@ export default async function ReportsPage({ searchParams }: PageProps<"/reports"
   const user = await requirePage("viewReports");
   const sp = await searchParams;
   const today = todayIST();
-  const month = typeof sp.month === "string" && /^\d{4}-\d{2}$/.test(sp.month) ? sp.month : today.slice(0, 7);
+  const month = isMonth(sp.month) ? sp.month : today.slice(0, 7);
   const { from, to } = monthBounds(month);
   const rows = (await dayRows(user.hotelId, from, to < today ? to : today)).reverse();
   const t = rows.reduce(

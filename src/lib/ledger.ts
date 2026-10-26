@@ -86,6 +86,31 @@ export async function ensureDay(hotelId: number, date: string, db?: DB) {
   return row ?? (await db.select().from(dayBooks).where(where))[0];
 }
 
+// Day book for display. Unlike ensureDay it never writes, so just looking at a date
+// does not leave an "open" day behind.
+export async function getDay(hotelId: number, date: string, db?: DB) {
+  db ??= await getDb();
+  const [existing] = await db.select().from(dayBooks).where(and(eq(dayBooks.hotelId, hotelId), eq(dayBooks.date, date)));
+  if (existing) return existing;
+  const [prev] = await db
+    .select({ countedCash: dayBooks.countedCash })
+    .from(dayBooks)
+    .where(and(eq(dayBooks.hotelId, hotelId), lt(dayBooks.date, date), eq(dayBooks.status, "closed")))
+    .orderBy(desc(dayBooks.date))
+    .limit(1);
+  return {
+    hotelId,
+    date,
+    openingCash: prev?.countedCash ?? 0,
+    countedCash: null,
+    cashDeposit: 0,
+    status: "open" as const,
+    closedBy: null,
+    closedAt: null,
+    note: null,
+  };
+}
+
 // Outstanding dues per party: credit-type sales minus receipts, all time.
 export async function partyBalances(hotelId: number, db?: DB) {
   db ??= await getDb();

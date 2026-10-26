@@ -6,25 +6,10 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb, schema } from "@/db";
 import { createHotelWithDefaults } from "@/db/defaults";
-import { Forbidden, getUser, hashPassword, requirePlatformAction, startSession } from "./auth";
+import { getUser, hashPassword, requirePlatformAction, startSession } from "./auth";
 import { addDays, toPaise, todayIST } from "./format";
 import { extendPeriod } from "./subscription";
-import type { FormState } from "./actions";
-
-const ok = (msg: string): FormState => ({ ok: msg, at: Date.now() });
-const fail = (msg: string): FormState => ({ error: msg, at: Date.now() });
-
-class UserError extends Error {}
-
-async function run(fn: () => Promise<FormState>): Promise<FormState> {
-  try {
-    return await fn();
-  } catch (e) {
-    if (e instanceof Forbidden || e instanceof UserError) return fail(e.message);
-    console.error(e);
-    return fail("Something went wrong. Please try again.");
-  }
-}
+import { UserError, isUniqueViolation, ok, run, type FormState } from "./action-helpers";
 
 const hotelSchema = z.object({
   hotelName: z.string().trim().min(2, "Hotel name is required"),
@@ -55,12 +40,18 @@ async function newHotel(fd: FormData, planId?: number) {
   if (!plan) throw new UserError("No plan found. Platform setup is incomplete.");
   const hotelUnits = units(fd);
   const passwordHash = await hashPassword(p.data.password);
-  return db.transaction((tx) =>
-    createHotelWithDefaults(tx, {
-      hotel: { name: p.data.hotelName, city: p.data.city, phone: p.data.login, planId: plan.id, ...hotelUnits },
-      owner: { name: p.data.ownerName, login: p.data.login, passwordHash },
-    }),
-  );
+  try {
+    return await db.transaction((tx) =>
+      createHotelWithDefaults(tx, {
+        hotel: { name: p.data.hotelName, city: p.data.city, phone: p.data.login, planId: plan.id, ...hotelUnits },
+        owner: { name: p.data.ownerName, login: p.data.login, passwordHash },
+      }),
+    );
+  } catch (e) {
+    // Two sign-ups with the same number at once: the second hits the unique login index.
+    if (isUniqueViolation(e)) throw new UserError("This mobile number already has an account. Log in instead.");
+    throw e;
+  }
 }
 
 // Public self sign-up: creates the hotel on a free trial and logs the owner in.
@@ -100,6 +91,7 @@ export async function recordPayment(_: FormState, fd: FormData): Promise<FormSta
     const amount = toPaise(fd.get("amount"));
     const method = String(fd.get("method") ?? "");
     const planId = Number(fd.get("planId"));
+    if (!Number.isInteger(hotelId) || !Number.isInteger(planId)) throw new UserError("Hotel or plan not found.");
     if (!Number.isInteger(months) || months < 1 || months > 36) throw new UserError("Months must be 1 to 36.");
     if (amount == null || amount <= 0) throw new UserError("Enter the amount received.");
     if (!["upi", "bank", "cash", "cheque"].includes(method)) throw new UserError("Choose how it was paid.");
@@ -134,6 +126,7 @@ export async function extendTrial(_: FormState, fd: FormData): Promise<FormState
     const me = await requirePlatformAction();
     const hotelId = Number(fd.get("hotelId"));
     const days = Number(fd.get("days"));
+    if (!Number.isInteger(hotelId)) throw new UserError("Hotel not found.");
     if (!Number.isInteger(days) || days < 1 || days > 90) throw new UserError("Days must be 1 to 90.");
     const db = await getDb();
     const [hotel] = await db.select().from(schema.hotels).where(eq(schema.hotels.id, hotelId));
@@ -151,6 +144,7 @@ export async function extendTrial(_: FormState, fd: FormData): Promise<FormState
 export async function setSuspended(hotelId: number, suspended: boolean): Promise<FormState> {
   return run(async () => {
     const me = await requirePlatformAction();
+    if (!Number.isInteger(hotelId)) throw new UserError("Hotel not found.");
     const db = await getDb();
     const [hotel] = await db.select().from(schema.hotels).where(eq(schema.hotels.id, hotelId));
     if (!hotel) throw new UserError("Hotel not found.");
@@ -175,6 +169,7 @@ export async function savePlan(_: FormState, fd: FormData): Promise<FormState> {
       return n;
     };
     if (price == null) throw new UserError("Enter the monthly price.");
+    if (!Number.isInteger(id)) throw new UserError("Plan not found.");
     const db = await getDb();
     const values = { name: String(fd.get("name") ?? "").trim() || "Plan", priceMonthly: price, maxEmployees: limit("maxEmployees"), maxUsers: limit("maxUsers") };
     await db.update(schema.plans).set(values).where(eq(schema.plans.id, id));

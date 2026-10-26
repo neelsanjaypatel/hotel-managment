@@ -5,7 +5,7 @@ import { requirePage, can } from "@/lib/auth";
 import { getDb, schema } from "@/db";
 import { dailySeries, groupCategories, partyBalances, rangeTotals } from "@/lib/ledger";
 import { bookingsBetween } from "@/lib/bookings";
-import { addDays, bookingNo, monthBounds, prettyDate, prettyMonth, rupees, todayIST, SALE_MODE_LABEL, SLOT_LABEL, UNIT_LABEL } from "@/lib/format";
+import { addDays, bookingNo, monthBounds, prettyDate, prettyMonth, rupees, todayIST, SALE_MODE_LABEL, SLOT_LABEL, UNIT_LABEL, isMonth } from "@/lib/format";
 import { Badge, Bar, Card, PageHeader, Stat } from "@/components/ui";
 import { PeriodPicker } from "@/components/forms";
 import { DailyChart } from "@/components/daily-chart";
@@ -18,7 +18,7 @@ export default async function Dashboard({ searchParams }: PageProps<"/">) {
 
   const today = todayIST();
   const sp = await searchParams;
-  const month = typeof sp.month === "string" && /^\d{4}-\d{2}$/.test(sp.month) ? sp.month : today.slice(0, 7);
+  const month = isMonth(sp.month) ? sp.month : today.slice(0, 7);
   const { from, to } = monthBounds(month);
   const last = to < today ? to : today;
   const db = await getDb();

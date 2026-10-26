@@ -1,6 +1,6 @@
 import { getUser, can } from "@/lib/auth";
 import { dayRows } from "@/lib/ledger";
-import { monthBounds, todayIST } from "@/lib/format";
+import { isMonth, monthBounds, todayIST } from "@/lib/format";
 
 const r = (p: number) => (p / 100).toFixed(2);
 
@@ -8,7 +8,7 @@ export async function GET(req: Request) {
   const user = await getUser();
   if (!user?.hotelId || !user.access?.canRead || !can(user, "viewReports")) return new Response("Forbidden", { status: 403 });
   const param = new URL(req.url).searchParams.get("month") ?? "";
-  const month = /^\d{4}-\d{2}$/.test(param) ? param : todayIST().slice(0, 7);
+  const month = isMonth(param) ? param : todayIST().slice(0, 7);
   const { from, to } = monthBounds(month);
   const rows = await dayRows(user.hotelId, from, to);
   const lines = [

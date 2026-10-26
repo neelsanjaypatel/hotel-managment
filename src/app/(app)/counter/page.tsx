@@ -2,7 +2,7 @@ import Link from "next/link";
 import { and, desc, eq, lt } from "drizzle-orm";
 import { requirePage, can } from "@/lib/auth";
 import { getDb, schema } from "@/db";
-import { ensureDay, rangeTotals } from "@/lib/ledger";
+import { getDay, rangeTotals } from "@/lib/ledger";
 import { addDays, isISODate, prettyDate, rupees, rupeesPlain, todayIST, PAY_MODE_LABEL, SALE_MODE_LABEL, UNIT_LABEL } from "@/lib/format";
 import { deleteEntry, reopenDay, setOpeningCash } from "@/lib/actions";
 import { Badge, Card, Empty, PageHeader, Stat } from "@/components/ui";
@@ -22,7 +22,7 @@ export default async function CounterPage({ searchParams }: PageProps<"/counter"
   const { sales, expenses, advances, receipts, parties, employees, expenseCategories: cats, users, dayBooks } = schema;
 
   const h = user.hotelId;
-  const day = await ensureDay(h, date, db);
+  const day = await getDay(h, date, db);
   const [t, saleRows, expRows, advRows, recRows, partyRows, empRows, catRows, closer, priorClosed] = await Promise.all([
     rangeTotals(h, date, date, db),
     db.select({ s: sales, party: parties.name }).from(sales).leftJoin(parties, eq(parties.id, sales.partyId)).where(and(eq(sales.hotelId, h), eq(sales.date, date))).orderBy(desc(sales.id)),

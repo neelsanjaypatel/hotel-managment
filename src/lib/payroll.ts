@@ -15,7 +15,11 @@ export type PayrollRow = Awaited<ReturnType<typeof monthPayroll>>[number];
 export async function monthPayroll(hotelId: number, month: string, opts: { employeeIds?: number[] } = {}, db?: DB) {
   db ??= await getDb();
   const { from, to, days } = monthBounds(month);
-  const empFilter = and(eq(employees.hotelId, hotelId), opts.employeeIds ? inArray(employees.id, opts.employeeIds) : eq(employees.active, true));
+  // Someone who left mid-month is inactive now but still has salary due for the days worked,
+  // so the sheet includes anyone with attendance or an advance in the month.
+  const workedThisMonth = sql`(${employees.active} or exists (select 1 from attendance a where a.employee_id = ${employees.id} and a.date between ${from} and ${to})
+    or exists (select 1 from advances v where v.employee_id = ${employees.id} and v.date between ${from} and ${to}))`;
+  const empFilter = and(eq(employees.hotelId, hotelId), opts.employeeIds ? inArray(employees.id, opts.employeeIds) : workedThisMonth);
 
   const [emps, att, adv, wages] = await Promise.all([
     db.select().from(employees).where(empFilter).orderBy(employees.department, employees.name),

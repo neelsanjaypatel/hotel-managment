@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { requirePage } from "@/lib/auth";
 import { getDb, schema } from "@/db";
-import { rupees, todayIST } from "@/lib/format";
+import { rupees, todayIST, isMonth } from "@/lib/format";
 import { Empty, PageHeader } from "@/components/ui";
 import { PeriodPicker } from "@/components/forms";
 import { SalaryView } from "@/components/salary";
@@ -12,7 +12,7 @@ export default async function MePage({ searchParams }: PageProps<"/me">) {
   const user = await requirePage();
   if (!user.employeeId) return <Empty>Your login is not linked to an employee record.</Empty>;
   const sp = await searchParams;
-  const month = typeof sp.month === "string" && /^\d{4}-\d{2}$/.test(sp.month) ? sp.month : todayIST().slice(0, 7);
+  const month = isMonth(sp.month) ? sp.month : todayIST().slice(0, 7);
   const db = await getDb();
   const [e] = await db
     .select()

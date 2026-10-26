@@ -1,12 +1,20 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useTransition } from "react";
 import { loginAction } from "@/lib/actions";
 
 export function LoginForm() {
   const [state, action, pending] = useActionState(loginAction, null);
+  const [, startTransition] = useTransition();
   return (
-    <form action={action} className="space-y-3 rounded-xl border border-line bg-surface p-5">
+    // Submitted by hand so a wrong password does not also clear the login field.
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        const fd = new FormData(e.currentTarget);
+        startTransition(() => action(fd));
+      }}
+      className="space-y-3 rounded-xl border border-line bg-surface p-5">
       <label className="block">
         <span className="label">Login (phone or username)</span>
         <input name="login" className="field" autoComplete="username" required autoFocus />
