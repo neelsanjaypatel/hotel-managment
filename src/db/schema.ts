@@ -336,6 +336,44 @@ export const advances = pgTable(
   (t) => [index("advances_hotel_date").on(t.hotelId, t.date)],
 );
 
+// Salary handed to an employee for a month's work. Paid on `date` (cash drawer / bank that
+// day), counted against `month`'s payroll so a salary paid on 5 Nov settles October.
+export const salaryPayments = pgTable(
+  "salary_payments",
+  {
+    id: serial("id").primaryKey(),
+    hotelId: integer("hotel_id")
+      .notNull()
+      .references(() => hotels.id),
+    employeeId: integer("employee_id")
+      .notNull()
+      .references(() => employees.id),
+    month: text("month").notNull(), // YYYY-MM the salary is for
+    date: date("date", { mode: "string" }).notNull(),
+    amount: integer("amount").notNull(),
+    paidVia: payModeEnum("paid_via").notNull(),
+    note: text("note"),
+    createdBy: integer("created_by")
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("salary_payments_hotel_date").on(t.hotelId, t.date), index("salary_payments_hotel_month").on(t.hotelId, t.month)],
+);
+
+// Owners of the hotel and their share of profit. A partner may also have a login (user_id).
+export const partners = pgTable("partners", {
+  id: serial("id").primaryKey(),
+  hotelId: integer("hotel_id")
+    .notNull()
+    .references(() => hotels.id),
+  name: text("name").notNull(),
+  phone: text("phone"),
+  shareBp: integer("share_bp").notNull(), // basis points: 2500 = 25%
+  userId: integer("user_id").references(() => users.id),
+  active: boolean("active").notNull().default(true),
+});
+
 export const auditLog = pgTable("audit_log", {
   id: serial("id").primaryKey(),
   hotelId: integer("hotel_id"), // null for platform actions

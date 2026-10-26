@@ -5,6 +5,7 @@ import { requirePage, can } from "@/lib/auth";
 import { getDb, schema } from "@/db";
 import { dailySeries, groupCategories, partyBalances, rangeTotals } from "@/lib/ledger";
 import { bookingsBetween } from "@/lib/bookings";
+import { monthProfit } from "@/lib/payroll";
 import { addDays, bookingNo, monthBounds, prettyDate, prettyMonth, rupees, todayIST, SALE_MODE_LABEL, SLOT_LABEL, UNIT_LABEL, isMonth } from "@/lib/format";
 import { Badge, Bar, Card, PageHeader, Stat } from "@/components/ui";
 import { PeriodPicker } from "@/components/forms";
@@ -38,7 +39,8 @@ export default async function Dashboard({ searchParams }: PageProps<"/">) {
         + coalesce((select sum(amount) from sales where hotel_id = d.hotel_id and date = d.date and mode = 'cash'), 0)
         + coalesce((select sum(amount) from receipts where hotel_id = d.hotel_id and date = d.date and mode = 'cash'), 0)
         - coalesce((select sum(amount) from expenses where hotel_id = d.hotel_id and date = d.date and paid_via = 'cash'), 0)
-        - coalesce((select sum(amount) from advances where hotel_id = d.hotel_id and date = d.date and paid_via = 'cash'), 0))::int as diff
+        - coalesce((select sum(amount) from advances where hotel_id = d.hotel_id and date = d.date and paid_via = 'cash'), 0)
+        - coalesce((select sum(amount) from salary_payments where hotel_id = d.hotel_id and date = d.date and paid_via = 'cash'), 0))::int as diff
       from day_books d where d.hotel_id = ${h} and d.status = 'closed' and d.date between ${from} and ${to}`),
   ]);
   const shorts = ((shortRows as unknown as { rows?: { date: string; diff: number }[] }).rows ?? (shortRows as unknown as { date: string; diff: number }[]))
@@ -51,6 +53,7 @@ export default async function Dashboard({ searchParams }: PageProps<"/">) {
   const maxUnit = Math.max(1, ...m.salesByUnit.map((u) => u.total));
   const maxMode = Math.max(1, ...m.salesByMode.map((u) => u.total));
   const setup = user.role === "admin" ? await setupSteps(h) : [];
+  const profit = await monthProfit(h, month, db);
   const soon = await bookingsBetween(h, today, addDays(today, 7), ["tentative", "confirmed"], db);
   const units = (["restaurant", "rooms", "banquet"] as const).filter((u) =>
     u === "restaurant" ? user.hotel.hasRestaurant : u === "rooms" ? user.hotel.hasRooms : user.hotel.hasBanquet,
@@ -113,8 +116,14 @@ export default async function Dashboard({ searchParams }: PageProps<"/">) {
 
       <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="Month income" value={rupees(m.income)} tone="in" />
-        <Stat label="Month expense" value={rupees(m.expense)} tone="out" hint="Includes daily wages" />
-        <Stat label="Net profit (before salaries)" value={rupees(m.net)} tone={m.net >= 0 ? "in" : "out"} />
+        <Stat label="Expenses (excl. staff)" value={rupees(profit.otherExpenses)} tone="out" />
+        <Stat label="Staff salaries" value={rupees(profit.salaries)} tone="out" hint={month === today.slice(0, 7) ? "Earned so far this month" : "Earned in the month"} />
+        <Stat
+          label="Profit after salaries"
+          value={rupees(profit.profit)}
+          tone={profit.profit >= 0 ? "in" : "out"}
+          hint={<Link href={`/partners?month=${month}`} className="text-accent">Partner shares ›</Link>}
+        />
         <Stat label="Pending dues" value={rupees(totalDue)} tone="warn" hint="Zomato, Swiggy, credit, banquet" />
         <Stat label="Cash received" value={rupees(m.cashIn)} />
         <Stat label="Bank / UPI / card" value={rupees(m.bankIn)} />

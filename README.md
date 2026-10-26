@@ -49,6 +49,35 @@ creates only the plans and the platform owner login.
 To start over locally: stop the server and delete `.data/pglite`. Always stop
 the dev server normally; a hard kill can leave the local database unreadable.
 
+## Salaries, profit and partners
+
+- **Pay salary** from Payroll: per employee ("Pay") or "Pay all balances" for
+  the month. The payment leaves today's counter (cash drawer or bank) and is
+  counted against the month it is for, so October salary paid on 5 November
+  settles October. Payroll balance = earned - advances - daily wages paid -
+  salary paid. Each employee has a printable payslip (`/payslip/[id]`), also
+  linked from My Salary.
+- **Profit after salaries** (dashboard and Partners page) = income - expenses
+  - salaries earned by all staff in the month. Daily wages paid from the
+  counter are counted once, as salary.
+- **Partner shares**: owner sets each partner's % in Settings (total up to
+  100%). The Partners page shows each partner's share of the month's profit
+  and of the financial year (April-March) so far. A partner's own row is
+  highlighted when their login is linked.
+
+## Counter, edits and activity log
+
+- The counter shows one form at a time (Sale / Expense / Advance / Received)
+  with tap buttons for payment mode, one-tap "most used" expense categories,
+  and a big amount box that keeps focus for the next entry.
+- Tap any entry in the day's list to edit or delete it (own entries, or any
+  for the owner, only while the day is open; booking entries are changed from
+  the booking).
+- **Activity log** (owner and partners): every add, change (with before ->
+  after), delete, day close / reopen, by whom and when, per day.
+- **Install as an app**: open the site on a phone and use "Add to Home
+  screen"; it opens full screen with the Hotel Desk icon.
+
 ## Bookings (banquet, rooms, tables)
 
 A booking is made for a future date with customer name and mobile, occasion,
@@ -81,7 +110,7 @@ cancelling needs a manager or the owner.
 | admin | Everything. Only role that adds or edits employees, logins, categories, parties, and reopens closed days. |
 | manager | Counter entries, close the day, attendance for workers assigned to them. No salary figures. |
 | cashier | Counter entries only. |
-| partner | Read everything (dashboard, counter, payroll, reports). Cannot add or change anything. |
+| partner | Read everything (dashboard, counter, payroll, partner shares, activity log, reports). Cannot add or change anything. |
 | viewer | Read dashboard, counter and reports. No payroll. |
 | employee | Own attendance calendar, salary calculation and advances. |
 

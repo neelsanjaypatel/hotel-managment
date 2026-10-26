@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { and, between, desc, eq } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { monthPayroll } from "@/lib/payroll";
@@ -30,10 +31,13 @@ export async function SalaryView({ hotelId, employeeId, month }: { hotelId: numb
 
   return (
     <div className="space-y-4">
+      <div className="flex justify-end">
+        <Link href={`/payslip/${employeeId}?month=${month}`} className="btn btn-ghost">Payslip</Link>
+      </div>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="Earned so far" value={rupees(row.earned)} tone="in" hint={`${row.paidDays} paid day(s)${row.otPay ? ` + OT ${rupees(row.otPay)}` : ""}`} />
         <Stat label="Advance taken" value={rupees(row.advance)} tone="warn" />
-        <Stat label={e.payType === "daily" ? "Wages already paid" : "Paid during month"} value={rupees(row.wagesPaid)} />
+        <Stat label="Already paid" value={rupees(row.wagesPaid + row.salaryPaid)} hint={row.wagesPaid ? `Daily wages ${rupees(row.wagesPaid)}` : undefined} />
         <Stat label="Balance payable" value={rupees(row.net)} tone={row.net >= 0 ? "in" : "out"} />
       </div>
 
@@ -65,6 +69,7 @@ export async function SalaryView({ hotelId, employeeId, month }: { hotelId: numb
             <dt className="text-muted">Overtime</dt><dd className="text-right">{rupees(row.otPay)}</dd>
             <dt className="text-muted">- Advance</dt><dd className="text-right text-expense">{rupees(row.advance)}</dd>
             <dt className="text-muted">- Wages already paid</dt><dd className="text-right text-expense">{rupees(row.wagesPaid)}</dd>
+            <dt className="text-muted">- Salary paid</dt><dd className="text-right text-expense">{rupees(row.salaryPaid)}</dd>
             <dt className="border-t border-line pt-1.5 font-semibold">Balance payable</dt><dd className="border-t border-line pt-1.5 text-right font-semibold">{rupees(row.net)}</dd>
           </dl>
           {adv.length > 0 && (

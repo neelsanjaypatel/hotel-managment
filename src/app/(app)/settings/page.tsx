@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { requirePage } from "@/lib/auth";
 import { getDb, schema } from "@/db";
-import { resetPassword, saveCategory, saveHotelProfile, saveUser, setUserActive } from "@/lib/actions";
+import { removePartner, resetPassword, saveCategory, saveHotelProfile, savePartner, saveUser, setUserActive } from "@/lib/actions";
 import { Badge, Card, PageHeader } from "@/components/ui";
 import { ActButton, ActionForm, Input, Select } from "@/components/forms";
 
@@ -20,7 +20,7 @@ export default async function SettingsPage() {
   const me = await requirePage("manageMaster");
   const db = await getDb();
   const { users, employees, expenseCategories: cats } = schema;
-  const [userRows, empRows, catRows] = await Promise.all([
+  const [userRows, empRows, catRows, partnerRows] = await Promise.all([
     db
       .select({ u: users, emp: employees.name })
       .from(users)
@@ -29,7 +29,15 @@ export default async function SettingsPage() {
       .orderBy(users.role, users.name),
     db.select().from(employees).where(and(eq(employees.hotelId, me.hotelId), eq(employees.active, true))).orderBy(employees.name),
     db.select().from(cats).where(eq(cats.hotelId, me.hotelId)).orderBy(cats.name),
+    db
+      .select()
+      .from(schema.partners)
+      .where(and(eq(schema.partners.hotelId, me.hotelId), eq(schema.partners.active, true)))
+      .orderBy(schema.partners.name),
   ]);
+  const allocatedBp = partnerRows.reduce((a, p) => a + p.shareBp, 0);
+  const loginOptions = userRows.filter(({ u }) => u.active).map(({ u }) => ({ value: u.id, label: `${u.name} (${u.role})` }));
+  const loginName = new Map(userRows.map(({ u }) => [u.id, u.name]));
   const parents = catRows.filter((c) => !c.parentId);
 
   return (
@@ -101,6 +109,53 @@ export default async function SettingsPage() {
             </div>
           </ActionForm>
         </div>
+      </Card>
+
+      <Card title={`Partners and profit share · ${(allocatedBp / 100).toString()}% allocated`} className="mt-4">
+        {partnerRows.length > 0 && (
+          <div className="-mx-4 -mt-4 mb-4 overflow-x-auto">
+            <table className="tbl">
+              <thead><tr><th>Partner</th><th className="r">Share</th><th>Login</th><th /></tr></thead>
+              <tbody>
+                {partnerRows.map((p) => (
+                  <tr key={p.id}>
+                    <td className="font-medium">{p.name}{p.phone && <div className="text-xs font-normal text-muted">{p.phone}</div>}</td>
+                    <td className="r num">{p.shareBp / 100}%</td>
+                    <td className="text-muted">{p.userId ? loginName.get(p.userId) : "-"}</td>
+                    <td className="r">
+                      <span className="inline-flex flex-wrap items-center justify-end gap-3">
+                        <details className="text-left">
+                          <summary className="cursor-pointer text-xs text-muted">Edit</summary>
+                          <div className="mt-2 w-64">
+                            <ActionForm action={savePartner} submit="Save" resetOnOk={false}>
+                              <input type="hidden" name="id" value={p.id} />
+                              <div className="space-y-2">
+                                <Input name="name" label="Name" defaultValue={p.name} required />
+                                <Input name="phone" label="Phone" defaultValue={p.phone ?? ""} inputMode="tel" />
+                                <Input name="share" label="Share (%)" defaultValue={String(p.shareBp / 100)} inputMode="decimal" required />
+                                <Select name="userId" label="Their login (optional)" options={loginOptions} defaultValue={p.userId ?? ""} placeholder="None" />
+                              </div>
+                            </ActionForm>
+                          </div>
+                        </details>
+                        <ActButton run={removePartner.bind(null, p.id)} label="Remove" confirm={`Remove ${p.name} from profit sharing?`} />
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <ActionForm action={savePartner} submit="Add partner">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <Input name="name" label="Partner name" required />
+            <Input name="phone" label="Phone" inputMode="tel" />
+            <Input name="share" label="Share (%)" inputMode="decimal" placeholder="e.g. 10" required />
+            <Select name="userId" label="Their login (optional)" options={loginOptions} placeholder="None" />
+          </div>
+        </ActionForm>
+        <p className="mt-2 text-xs text-muted">Linking a login lets that partner see their own row highlighted on the Partners page.</p>
       </Card>
 
       <Card title="Expense categories" className="mt-4">

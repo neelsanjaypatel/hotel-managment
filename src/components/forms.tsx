@@ -13,18 +13,30 @@ export function ActionForm({
   className = "",
   submit = "Save",
   resetOnOk = true,
+  onOk,
+  wide = false,
 }: {
   action: Action;
   children: ReactNode;
   className?: string;
   submit?: string;
   resetOnOk?: boolean;
+  onOk?: () => void;
+  wide?: boolean;
 }) {
   const [state, formAction, pending] = useActionState(action, null);
   const [, startTransition] = useTransition();
   const ref = useRef<HTMLFormElement>(null);
+  const onOkRef = useRef(onOk);
   useEffect(() => {
-    if (state?.ok && resetOnOk) ref.current?.reset();
+    onOkRef.current = onOk;
+  });
+  useEffect(() => {
+    if (!state?.ok) return;
+    if (resetOnOk) ref.current?.reset();
+    onOkRef.current?.();
+    // Ready for the next entry: put the cursor back in the field marked data-refocus.
+    ref.current?.querySelector<HTMLInputElement>("[data-refocus]")?.focus();
   }, [state, resetOnOk]);
   return (
     <form
@@ -40,7 +52,7 @@ export function ActionForm({
     >
       {children}
       <div className="mt-3 flex flex-wrap items-center gap-3">
-        <button className="btn" disabled={pending}>
+        <button className={`btn ${wide ? "w-full py-3 text-base sm:w-auto sm:py-2 sm:text-sm" : ""}`} disabled={pending}>
           {pending ? "Saving..." : submit}
         </button>
         <Result state={state} />
@@ -149,5 +161,47 @@ export function Input({ label, ...props }: { label: string } & React.InputHTMLAt
       <span className="label">{label}</span>
       <input className="field" {...props} />
     </label>
+  );
+}
+
+// Tap-to-pick buttons for a short list (payment mode, section). The value travels in a
+// hidden input, which form.reset() leaves alone, so the choice survives "save and add next".
+export function Chips({
+  name,
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  name: string;
+  label: string;
+  options: { value: string; label: string }[];
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div>
+      <span className="label">{label}</span>
+      <input type="hidden" name={name} value={value} />
+      <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label={label}>
+        {options.map((o) => {
+          const on = o.value === value;
+          return (
+            <button
+              key={o.value}
+              type="button"
+              role="radio"
+              aria-checked={on}
+              onClick={() => onChange(o.value)}
+              className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                on ? "border-accent bg-accent text-accent-ink" : "border-line bg-surface text-ink hover:bg-surface-2"
+              }`}
+            >
+              {o.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }

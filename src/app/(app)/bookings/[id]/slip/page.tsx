@@ -4,7 +4,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { requirePage } from "@/lib/auth";
 import { getDb, schema } from "@/db";
 import { bookingNo, prettyDate, rupees, todayIST, SLOT_LABEL, UNIT_LABEL } from "@/lib/format";
-import { PrintButton } from "./print-button";
+import { PrintButton } from "@/components/print-button";
 
 export const metadata = { title: "Booking confirmation" };
 

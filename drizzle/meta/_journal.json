@@ -15,6 +15,13 @@
       "when": 1792865283852,
       "tag": "0001_bookings",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793028152382,
+      "tag": "0002_salaries_partners",
+      "breakpoints": true
     }
   ]
 }

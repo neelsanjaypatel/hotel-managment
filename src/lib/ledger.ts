@@ -3,7 +3,7 @@ import { and, between, desc, eq, lt, sql } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { getDb, schema, type DB } from "@/db";
 
-const { sales, receipts, expenses, advances, dayBooks, expenseCategories, parties } = schema;
+const { sales, receipts, expenses, advances, dayBooks, expenseCategories, parties, salaryPayments } = schema;
 
 type ModeRow = { key: string; total: number };
 
@@ -25,7 +25,7 @@ export type Totals = Awaited<ReturnType<typeof rangeTotals>>;
 // All income / expense numbers for a date range (a single day when from = to).
 export async function rangeTotals(hotelId: number, from: string, to: string, db?: DB) {
   db ??= await getDb();
-  const [salesByMode, salesByUnit, receiptsByMode, expByVia, expByCat, advByVia] = await Promise.all([
+  const [salesByMode, salesByUnit, receiptsByMode, expByVia, expByCat, advByVia, salByVia] = await Promise.all([
     db.select({ key: sales.mode, total: sum(sales.amount) }).from(sales).where(inRange(sales, hotelId, from, to)).groupBy(sales.mode),
     db.select({ key: sales.unit, total: sum(sales.amount) }).from(sales).where(inRange(sales, hotelId, from, to)).groupBy(sales.unit),
     db.select({ key: receipts.mode, total: sum(receipts.amount) }).from(receipts).where(inRange(receipts, hotelId, from, to)).groupBy(receipts.mode),
@@ -37,16 +37,23 @@ export async function rangeTotals(hotelId: number, from: string, to: string, db?
       .where(inRange(expenses, hotelId, from, to))
       .groupBy(expenseCategories.id, expenseCategories.name, expenseCategories.parentId),
     db.select({ key: advances.paidVia, total: sum(advances.amount) }).from(advances).where(inRange(advances, hotelId, from, to)).groupBy(advances.paidVia),
+    db
+      .select({ key: salaryPayments.paidVia, total: sum(salaryPayments.amount) })
+      .from(salaryPayments)
+      .where(inRange(salaryPayments, hotelId, from, to))
+      .groupBy(salaryPayments.paidVia),
   ]);
 
   const income = total(salesByMode);
   const expense = total(expByVia);
   const cashIn = pick(salesByMode, "cash") + pick(receiptsByMode, "cash");
-  const cashOut = pick(expByVia, "cash") + pick(advByVia, "cash");
+  // Salary handed over is money leaving the drawer / bank that day; its cost is counted
+  // against the month it was earned (see monthProfit), not here.
+  const cashOut = pick(expByVia, "cash") + pick(advByVia, "cash") + pick(salByVia, "cash");
   const nonCash = (rows: ModeRow[]) => total(rows) - pick(rows, "cash");
   const bankIn =
     pick(salesByMode, "upi") + pick(salesByMode, "card") + pick(salesByMode, "bank") + nonCash(receiptsByMode);
-  const bankOut = nonCash(expByVia) + nonCash(advByVia);
+  const bankOut = nonCash(expByVia) + nonCash(advByVia) + nonCash(salByVia);
   const onCredit = pick(salesByMode, "zomato") + pick(salesByMode, "swiggy") + pick(salesByMode, "credit");
 
   return {
@@ -54,6 +61,7 @@ export async function rangeTotals(hotelId: number, from: string, to: string, db?
     expense,
     net: income - expense,
     advances: total(advByVia),
+    salaryPaid: total(salByVia),
     receipts: total(receiptsByMode),
     cashIn,
     cashOut,
@@ -165,6 +173,7 @@ export type DayRow = {
   credit: number;
   expense: number;
   advances: number;
+  salary: number;
   receipts: number;
   status: string | null;
   diff: number | null;
@@ -186,16 +195,18 @@ export async function dayRows(hotelId: number, from: string, to: string, db?: DB
     a as (select date, sum(amount) as total, sum(amount) filter (where paid_via = 'cash') as cash
           from advances where hotel_id = ${hotelId} and date between ${from} and ${to} group by date),
     r as (select date, sum(amount) as total, sum(amount) filter (where mode = 'cash') as cash
-          from receipts where hotel_id = ${hotelId} and date between ${from} and ${to} group by date)
+          from receipts where hotel_id = ${hotelId} and date between ${from} and ${to} group by date),
+    sp as (select date, sum(amount) as total, sum(amount) filter (where paid_via = 'cash') as cash
+          from salary_payments where hotel_id = ${hotelId} and date between ${from} and ${to} group by date)
     select to_char(days.date, 'YYYY-MM-DD') as date,
       coalesce(s.income, 0)::int as income, coalesce(s.cash, 0)::int as cash, coalesce(s.bank, 0)::int as bank,
       coalesce(s.credit, 0)::int as credit, coalesce(e.total, 0)::int as expense, coalesce(a.total, 0)::int as advances,
-      coalesce(r.total, 0)::int as receipts, b.status,
+      coalesce(sp.total, 0)::int as salary, coalesce(r.total, 0)::int as receipts, b.status,
       case when b.status = 'closed' then (b.counted_cash - (b.opening_cash - b.cash_deposit + coalesce(s.cash, 0)
-        + coalesce(r.cash, 0) - coalesce(e.cash, 0) - coalesce(a.cash, 0)))::int end as diff
+        + coalesce(r.cash, 0) - coalesce(e.cash, 0) - coalesce(a.cash, 0) - coalesce(sp.cash, 0)))::int end as diff
     from days
     left join s on s.date = days.date left join e on e.date = days.date
-    left join a on a.date = days.date left join r on r.date = days.date
+    left join a on a.date = days.date left join r on r.date = days.date left join sp on sp.date = days.date
     left join day_books b on b.hotel_id = ${hotelId} and b.date = days.date
     order by days.date`);
   const rows = (res as unknown as { rows?: DayRow[] }).rows ?? (res as unknown as DayRow[]);

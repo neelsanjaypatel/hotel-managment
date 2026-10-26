@@ -33,34 +33,67 @@ const saleSchema = z.object({
   mode: z.enum(schema.saleModeEnum.enumValues),
 });
 
+function payModeOf(fd: FormData, key: string, msg: string) {
+  const m = z.enum(schema.payModeEnum.enumValues).safeParse(fd.get(key));
+  if (!m.success) throw new UserError(msg);
+  return m.data;
+}
+
+// Field parsing shared by "add" and "edit" so both apply the same rules.
+async function parseSale(user: HotelUser, fd: FormData) {
+  const p = saleSchema.safeParse({ unit: fd.get("unit"), mode: fd.get("mode") });
+  if (!p.success) throw new UserError("Pick section and payment mode.");
+  const h = user.hotel;
+  if (!(p.data.unit === "restaurant" ? h.hasRestaurant : p.data.unit === "rooms" ? h.hasRooms : h.hasBanquet)) {
+    throw new UserError("This section is not enabled for your hotel.");
+  }
+  let partyId: number | null = null;
+  if (p.data.mode === "zomato" || p.data.mode === "swiggy") {
+    const name = p.data.mode === "zomato" ? "Zomato" : "Swiggy";
+    const db = await getDb();
+    const [party] = await db
+      .select()
+      .from(schema.parties)
+      .where(and(eq(schema.parties.hotelId, user.hotelId), eq(schema.parties.name, name)));
+    if (!party) throw new UserError(`${name} party is missing. Ask admin to add it under Dues.`);
+    partyId = party.id;
+  } else if (p.data.mode === "credit") {
+    partyId = Number(fd.get("partyId"));
+    await owned(schema.parties, partyId, user.hotelId, "credit customer");
+  }
+  return { ...p.data, amount: amount(fd), partyId, reference: str(fd, "reference") };
+}
+
+async function parseExpense(user: HotelUser, fd: FormData) {
+  const cat = await owned(schema.expenseCategories, Number(fd.get("categoryId")), user.hotelId, "category");
+  const paidVia = payModeOf(fd, "paidVia", "Choose how it was paid.");
+  let employeeId: number | null = null;
+  if (cat.isWages) {
+    employeeId = Number(fd.get("employeeId"));
+    await owned(schema.employees, employeeId, user.hotelId, "worker");
+  }
+  return { categoryId: cat.id as number, amount: amount(fd), paidVia, vendor: str(fd, "vendor"), note: str(fd, "note"), employeeId };
+}
+
+async function parseAdvance(user: HotelUser, fd: FormData) {
+  const employeeId = Number(fd.get("employeeId"));
+  await owned(schema.employees, employeeId, user.hotelId, "employee");
+  return { employeeId, amount: amount(fd), paidVia: payModeOf(fd, "paidVia", "Choose how it was paid."), note: str(fd, "note") };
+}
+
+async function parseReceipt(user: HotelUser, fd: FormData) {
+  const partyId = Number(fd.get("partyId"));
+  await owned(schema.parties, partyId, user.hotelId, "party who paid");
+  return { partyId, mode: payModeOf(fd, "mode", "Choose how it was received."), amount: amount(fd), note: str(fd, "note") };
+}
+
 export async function addSale(_: FormState, fd: FormData): Promise<FormState> {
   return run(async () => {
     const user = await requireAction("enterCounter");
     const date = await checkEntryDate(user, fd.get("date"));
-    const p = saleSchema.safeParse({ unit: fd.get("unit"), mode: fd.get("mode") });
-    if (!p.success) throw new UserError("Pick section and payment mode.");
-    const h = user.hotel;
-    if (!(p.data.unit === "restaurant" ? h.hasRestaurant : p.data.unit === "rooms" ? h.hasRooms : h.hasBanquet)) {
-      throw new UserError("This section is not enabled for your hotel.");
-    }
+    const values = await parseSale(user, fd);
     const db = await getDb();
-    let partyId: number | null = null;
-    if (p.data.mode === "zomato" || p.data.mode === "swiggy") {
-      const name = p.data.mode === "zomato" ? "Zomato" : "Swiggy";
-      const [party] = await db
-        .select()
-        .from(schema.parties)
-        .where(and(eq(schema.parties.hotelId, user.hotelId), eq(schema.parties.name, name)));
-      if (!party) throw new UserError(`${name} party is missing. Ask admin to add it under Dues.`);
-      partyId = party.id;
-    } else if (p.data.mode === "credit") {
-      partyId = Number(fd.get("partyId"));
-      await owned(schema.parties, partyId, user.hotelId, "credit customer");
-    }
-    const [row] = await db
-      .insert(schema.sales)
-      .values({ hotelId: user.hotelId, date, ...p.data, amount: amount(fd), partyId, reference: str(fd, "reference"), createdBy: user.id })
-      .returning();
+    const [row] = await db.insert(schema.sales).values({ hotelId: user.hotelId, date, ...values, createdBy: user.id }).returning();
     await audit(user, "create", "sale", row.id, row);
     revalidatePath("/", "layout");
     return ok("Sale added.");
@@ -71,29 +104,9 @@ export async function addExpense(_: FormState, fd: FormData): Promise<FormState>
   return run(async () => {
     const user = await requireAction("enterCounter");
     const date = await checkEntryDate(user, fd.get("date"));
-    const cat = await owned(schema.expenseCategories, Number(fd.get("categoryId")), user.hotelId, "category");
-    const paidVia = z.enum(schema.payModeEnum.enumValues).safeParse(fd.get("paidVia"));
-    if (!paidVia.success) throw new UserError("Choose how it was paid.");
-    let employeeId: number | null = null;
-    if (cat.isWages) {
-      employeeId = Number(fd.get("employeeId"));
-      await owned(schema.employees, employeeId, user.hotelId, "worker");
-    }
+    const values = await parseExpense(user, fd);
     const db = await getDb();
-    const [row] = await db
-      .insert(schema.expenses)
-      .values({
-        hotelId: user.hotelId,
-        date,
-        categoryId: cat.id as number,
-        amount: amount(fd),
-        paidVia: paidVia.data,
-        vendor: str(fd, "vendor"),
-        note: str(fd, "note"),
-        employeeId,
-        createdBy: user.id,
-      })
-      .returning();
+    const [row] = await db.insert(schema.expenses).values({ hotelId: user.hotelId, date, ...values, createdBy: user.id }).returning();
     await audit(user, "create", "expense", row.id, row);
     revalidatePath("/", "layout");
     return ok("Expense added.");
@@ -104,15 +117,9 @@ export async function addAdvance(_: FormState, fd: FormData): Promise<FormState>
   return run(async () => {
     const user = await requireAction("enterCounter");
     const date = await checkEntryDate(user, fd.get("date"));
-    const employeeId = Number(fd.get("employeeId"));
-    await owned(schema.employees, employeeId, user.hotelId, "employee");
-    const paidVia = z.enum(schema.payModeEnum.enumValues).safeParse(fd.get("paidVia"));
-    if (!paidVia.success) throw new UserError("Choose how it was paid.");
+    const values = await parseAdvance(user, fd);
     const db = await getDb();
-    const [row] = await db
-      .insert(schema.advances)
-      .values({ hotelId: user.hotelId, date, employeeId, amount: amount(fd), paidVia: paidVia.data, note: str(fd, "note"), createdBy: user.id })
-      .returning();
+    const [row] = await db.insert(schema.advances).values({ hotelId: user.hotelId, date, ...values, createdBy: user.id }).returning();
     await audit(user, "create", "advance", row.id, row);
     revalidatePath("/", "layout");
     return ok("Advance recorded. It will be deducted from salary.");
@@ -123,15 +130,9 @@ export async function addReceipt(_: FormState, fd: FormData): Promise<FormState>
   return run(async () => {
     const user = await requireAction("enterCounter");
     const date = await checkEntryDate(user, fd.get("date"));
-    const partyId = Number(fd.get("partyId"));
-    await owned(schema.parties, partyId, user.hotelId, "party who paid");
-    const mode = z.enum(schema.payModeEnum.enumValues).safeParse(fd.get("mode"));
-    if (!mode.success) throw new UserError("Choose how it was received.");
+    const values = await parseReceipt(user, fd);
     const db = await getDb();
-    const [row] = await db
-      .insert(schema.receipts)
-      .values({ hotelId: user.hotelId, date, partyId, mode: mode.data, amount: amount(fd), note: str(fd, "note"), createdBy: user.id })
-      .returning();
+    const [row] = await db.insert(schema.receipts).values({ hotelId: user.hotelId, date, ...values, createdBy: user.id }).returning();
     await audit(user, "create", "receipt", row.id, row);
     revalidatePath("/", "layout");
     return ok("Payment received recorded.");
@@ -143,6 +144,7 @@ const ENTRY_TABLES = {
   expense: schema.expenses,
   advance: schema.advances,
   receipt: schema.receipts,
+  salary: schema.salaryPayments,
 } as const;
 
 // Fix a typo: the person who entered it (or admin) can delete while the day is open.
@@ -170,6 +172,38 @@ export async function deleteEntry(kind: keyof typeof ENTRY_TABLES, id: number): 
     await audit(user, "delete", kind, id, row);
     revalidatePath("/", "layout");
     return ok("Entry deleted.");
+  });
+}
+
+// Correct an entry in place (same rules as delete). The date never changes; the audit log
+// keeps the values before and after.
+export async function updateEntry(kind: keyof typeof ENTRY_TABLES, id: number, _: FormState, fd: FormData): Promise<FormState> {
+  return run(async () => {
+    const user = await requireAction(kind === "salary" ? "manageMaster" : "enterCounter");
+    if (!Object.hasOwn(ENTRY_TABLES, kind) || !Number.isInteger(id)) throw new UserError("Unknown entry.");
+    const table = ENTRY_TABLES[kind];
+    const db = await getDb();
+    const where = and(eq(table.id, id), eq(table.hotelId, user.hotelId));
+    const [before] = await db.select().from(table).where(where);
+    if (!before) throw new UserError("Entry not found.");
+    if (user.role !== "admin" && before.createdBy !== user.id) throw new UserError("You can change only your own entries.");
+    if ("bookingId" in before && before.bookingId) throw new UserError("This entry belongs to a booking. Change it from the booking.");
+    await checkEntryDate(user, before.date);
+    const values =
+      kind === "sale"
+        ? await parseSale(user, fd)
+        : kind === "expense"
+          ? await parseExpense(user, fd)
+          : kind === "advance"
+            ? await parseAdvance(user, fd)
+            : kind === "receipt"
+              ? await parseReceipt(user, fd)
+              : { amount: amount(fd), paidVia: payModeOf(fd, "paidVia", "Choose how it was paid."), note: str(fd, "note") };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const [after] = await db.update(table).set(values as any).where(where).returning();
+    await audit(user, "update", kind, id, { before, after });
+    revalidatePath("/", "layout");
+    return ok("Entry updated.");
   });
 }
 
@@ -475,5 +509,64 @@ export async function saveHotelProfile(_: FormState, fd: FormData): Promise<Form
     await audit(admin, "update", "hotel", admin.hotelId, values);
     revalidatePath("/", "layout");
     return ok("Hotel details saved.");
+  });
+}
+
+// ---------- partners (profit share) ----------
+
+function shareBp(fd: FormData) {
+  const raw = String(fd.get("share") ?? "").trim();
+  if (!/^\d+(\.\d{1,2})?$/.test(raw)) throw new UserError("Share must be a percentage, e.g. 12.5");
+  const bp = Math.round(Number(raw) * 100);
+  if (bp <= 0 || bp > 10000) throw new UserError("Share must be between 0.01% and 100%.");
+  return bp;
+}
+
+async function activeShareTotal(hotelId: number, exceptId?: number) {
+  const db = await getDb();
+  const rows = await db
+    .select({ id: schema.partners.id, bp: schema.partners.shareBp })
+    .from(schema.partners)
+    .where(and(eq(schema.partners.hotelId, hotelId), eq(schema.partners.active, true)));
+  return rows.filter((r) => r.id !== exceptId).reduce((a, r) => a + r.bp, 0);
+}
+
+export async function savePartner(_: FormState, fd: FormData): Promise<FormState> {
+  return run(async () => {
+    const admin = await requireAction("manageMaster");
+    const name = str(fd, "name");
+    if (!name) throw new UserError("Partner name is required.");
+    const bp = shareBp(fd);
+    const id = Number(fd.get("id")) || null;
+    if (id) await owned(schema.partners, id, admin.hotelId, "partner");
+    const userId = Number(fd.get("userId")) || null;
+    if (userId) await owned(schema.users, userId, admin.hotelId, "login");
+    const others = await activeShareTotal(admin.hotelId, id ?? undefined);
+    if (others + bp > 10000) {
+      throw new UserError(`Shares would add up to ${(others + bp) / 100}%. Total cannot be more than 100%.`);
+    }
+    const values = { name, phone: str(fd, "phone"), shareBp: bp, userId };
+    const db = await getDb();
+    if (id) {
+      await db.update(schema.partners).set(values).where(and(eq(schema.partners.id, id), eq(schema.partners.hotelId, admin.hotelId)));
+      await audit(admin, "update", "partner", id, values);
+    } else {
+      const [row] = await db.insert(schema.partners).values({ ...values, hotelId: admin.hotelId }).returning();
+      await audit(admin, "create", "partner", row.id, values);
+    }
+    revalidatePath("/", "layout");
+    return ok(id ? "Partner updated." : "Partner added.");
+  });
+}
+
+export async function removePartner(partnerId: number): Promise<FormState> {
+  return run(async () => {
+    const admin = await requireAction("manageMaster");
+    await owned(schema.partners, partnerId, admin.hotelId, "partner");
+    const db = await getDb();
+    await db.update(schema.partners).set({ active: false }).where(and(eq(schema.partners.id, partnerId), eq(schema.partners.hotelId, admin.hotelId)));
+    await audit(admin, "remove", "partner", partnerId);
+    revalidatePath("/", "layout");
+    return ok("Partner removed.");
   });
 }
