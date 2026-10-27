@@ -84,8 +84,12 @@ async function main() {
             await tx.unsafe(`insert into ${table} select * from json_populate_recordset(null::${table}, $1::json)`, [chunk]);
           }
           copied[table] = data.length;
-          // Serial ids were copied explicitly; move the sequence past them.
-          await tx.unsafe(`
+          // Serial ids were copied explicitly; move the sequence past them (day_books has no id).
+          const [{ has_id }] = await tx.unsafe<{ has_id: boolean }[]>(
+            `select exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = $1 and column_name = 'id') as has_id`,
+            [table],
+          );
+          if (has_id) await tx.unsafe(`
             select setval(s, coalesce((select max(id) from ${table}), 1), (select max(id) from ${table}) is not null)
             from pg_get_serial_sequence('${table}', 'id') s where s is not null`);
         }
