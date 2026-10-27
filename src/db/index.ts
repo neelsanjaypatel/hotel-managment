@@ -17,8 +17,8 @@ function create() {
   if (url) {
     const client = postgres(url, { prepare: false });
     const db = drizzlePg(client, { schema });
-    // Production migrates once per deploy (npm start -> scripts/migrate.mjs, before the
-    // server listens). Running it here too would let several instances race on one migration.
+    // Production migrates once per deploy (scripts/migrate.mjs from npm run build / npm start).
+    // Running it here too would let several serverless instances race on one migration.
     return { db, ready: process.env.MIGRATE_ON_START === "1" ? migratePg(db, { migrationsFolder }) : Promise.resolve() };
   }
   // A hosted container's disk is wiped on every deploy; PGlite there would silently lose

@@ -166,27 +166,28 @@ close and reopen is written to `audit_log`.
   Overtime = one day's pay / 8 per hour. Advances and daily wages already paid
   from the counter (Labour Wages category, linked to the worker) are deducted.
 
-## Deploy (Railway)
+## Deploy (Supabase + Vercel)
 
-The repo is ready to deploy as is: `railway.json` sets the build (`npm run build`),
-the start (`npm start`, which applies database migrations and then starts the
-server on Railway's `PORT`) and a health check on `/login`.
-
-1. **New project**: on railway.com choose *New Project > Deploy from GitHub repo*
-   and pick this repository.
-2. **Database**: in the same project click *+ Create > Database > PostgreSQL*.
-3. **Connect them**: open the app service > *Variables* and add
-   - `DATABASE_URL` = `${{Postgres.DATABASE_URL}}` (a reference to the database
-     above, so no password is copied by hand)
+1. **Supabase**: create a project in region *South Asia (Mumbai)*. From
+   *Connect* copy the **Transaction pooler** connection string (port 6543) and
+   put your database password in it.
+2. **Vercel**: *Add New > Project*, import this GitHub repository, and add the
+   environment variables
+   - `DATABASE_URL` = the pooler string above
    - `PLATFORM_PAYMENT_NOTE` = your UPI ID / bank / WhatsApp for renewals.
-4. **Public address**: app service > *Settings > Networking > Generate Domain*.
-   The first deploy creates all tables by itself.
-5. **First login**: from this machine, with the database's *public* URL
-   (Postgres service > *Variables* > `DATABASE_PUBLIC_URL`):
+   Deploy. `npm run build` applies database migrations before building, so the
+   first deploy creates all tables and each later deploy updates them once.
+   `vercel.json` runs the server functions in Mumbai (`bom1`), next to the
+   database.
+3. **First login**: from this machine,
    `DATABASE_URL="postgres://..." npm run seed` adds the plans and the
    `platform` login. The password is written to `.data/logins.txt`; log in
    once and change it from My account.
-6. Open the site on a phone and "Add to Home screen" to install it.
+4. Open the site on a phone and "Add to Home screen" to install it.
+
+**Railway** works too: `railway.json` builds with `npm run build` and starts with
+`npm start` (which migrates first); set `DATABASE_URL` to
+`${{Postgres.DATABASE_URL}}`.
 
 The app refuses to run in production without `DATABASE_URL`: a container's disk
 is wiped on each deploy, so the local PGlite database cannot be used there.

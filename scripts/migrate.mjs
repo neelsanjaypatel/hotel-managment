@@ -1,6 +1,7 @@
-// Applies database migrations to the Postgres in DATABASE_URL (Railway / Supabase in production).
-// Runs from `npm start`, before the server listens: Railway's private database address is
-// not reachable during the build, and a single long-running server migrates once per deploy.
+// Applies database migrations to the Postgres in DATABASE_URL (Supabase / Railway in production).
+// Runs from `npm run build` (Vercel: each deploy migrates once, before any function starts) and
+// again from `npm start` (Railway: its private database address is not reachable while building).
+// Both are no-ops once the database is up to date.
 // Plain JavaScript so it needs no dev tools at runtime.
 // Without DATABASE_URL (local development with PGlite) it does nothing: the dev server
 // migrates its own embedded database.
