@@ -54,6 +54,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
     ? [
         { href: "/platform", label: "Hotels" },
         { href: "/platform/plans", label: "Plans" },
+        { href: "/account", label: "My account" },
       ]
     : ([
         readable && can(user, "viewReports") && { href: "/", label: "Dashboard" },
@@ -64,11 +65,14 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
         readable && can(user, "viewPayroll") && { href: "/payroll", label: "Payroll" },
         readable && can(user, "viewPayroll") && { href: "/partners", label: "Partners" },
         readable && staff && { href: "/parties", label: "Dues" },
+        readable && staff && { href: "/suppliers", label: "Suppliers" },
+        readable && can(user, "viewPayroll") && { href: "/summary", label: "Money summary" },
         readable && can(user, "viewReports") && { href: "/reports", label: "Reports" },
         readable && can(user, "viewPayroll") && { href: "/activity", label: "Activity log" },
         readable && can(user, "manageMaster") && { href: "/settings", label: "Settings" },
         can(user, "manageMaster") && { href: "/billing", label: "Billing" },
         readable && user.employeeId && { href: "/me", label: "My Salary" },
+        { href: "/account", label: "My account" },
       ].filter(Boolean) as NavItem[]);
 
   return (

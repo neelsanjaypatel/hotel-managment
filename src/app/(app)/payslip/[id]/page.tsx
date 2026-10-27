@@ -47,7 +47,7 @@ export default async function PayslipPage({ params, searchParams }: PageProps<"/
         <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 py-4 text-sm">
           <dt className="text-muted">Employee</dt><dd className="font-semibold">{e.name} · {e.code}</dd>
           <dt className="text-muted">Department</dt><dd>{e.department}{e.designation ? ` · ${e.designation}` : ""}</dd>
-          <dt className="text-muted">Pay</dt><dd className="num">{e.payType === "monthly" ? `${rupees(e.rate)} per month` : `${rupees(e.rate)} per day`}</dd>
+          <dt className="text-muted">Pay</dt><dd className="num">{e.payType === "monthly" ? `${rupees(row.rate)} per month` : `${rupees(row.rate)} per day`}</dd>
           <dt className="text-muted">Attendance</dt>
           <dd>Present {row.counts.P} · Absent {row.counts.A} · Half {row.counts.H} · Leave {row.counts.L} · Week off {row.counts.WO}{row.ot ? ` · OT ${row.ot} h` : ""}</dd>
           <dt className="text-muted">Paid days</dt><dd className="num">{row.paidDays}</dd>
@@ -57,13 +57,14 @@ export default async function PayslipPage({ params, searchParams }: PageProps<"/
           <dt>Basic earned</dt><dd className="text-right">{rupees(row.basic)}</dd>
           <dt>Overtime</dt><dd className="text-right">{rupees(row.otPay)}</dd>
           <dt className="font-semibold">Gross earned</dt><dd className="text-right font-semibold">{rupees(row.earned)}</dd>
-          <dt className="text-muted">Less advance</dt><dd className="text-right">{rupees(row.advance)}</dd>
+          <dt className="text-muted">Less advance{row.loanDue ? ` (loan installment ${rupees(row.loanDue)})` : ""}</dt><dd className="text-right">{rupees(row.advance)}</dd>
           {row.wagesPaid > 0 && <><dt className="text-muted">Less daily wages paid</dt><dd className="text-right">{rupees(row.wagesPaid)}</dd></>}
           <dt className="text-muted">Less salary paid</dt><dd className="text-right">{rupees(row.salaryPaid)}</dd>
           <dt className="border-t border-line pt-1.5 font-semibold">{row.net < 0 ? "Paid in excess" : "Balance payable"}</dt>
           <dd className="border-t border-line pt-1.5 text-right font-semibold">{rupees(Math.abs(row.net))}</dd>
         </dl>
 
+        {row.loanLeft > 0 && <p className="mt-2 text-xs text-muted">Loan still to recover after this month: {rupees(row.loanLeft)}</p>}
         {paid.length > 0 && (
           <div className="mt-4 border-t border-line pt-3 text-sm">
             <div className="mb-1 text-xs font-medium text-muted">Salary payments</div>

@@ -24,7 +24,9 @@ export default async function EmployeesPage({ searchParams }: PageProps<"/employ
   const managers = (await db.select().from(users).where(and(eq(users.hotelId, user.hotelId), eq(users.role, "manager")))).map((m) => ({ value: m.id, label: m.name }));
   const monthlyBill = visible.filter((r) => r.e.active && r.e.payType === "monthly").reduce((a, r) => a + r.e.rate, 0);
   const daily = visible.filter((r) => r.e.active && r.e.payType === "daily");
-  const codes = rows.map((r) => Number(r.e.code.replace(/\D/g, "")) || 0);
+  // Next code looks at every employee, including those who left, so it never repeats one.
+  const allCodes = await db.select({ code: employees.code }).from(employees).where(eq(employees.hotelId, user.hotelId));
+  const codes = allCodes.map((r) => Number(r.code.replace(/\D/g, "")) || 0);
   const nextCode = `E${String(Math.max(0, ...codes) + 1).padStart(3, "0")}`;
   const showPay = can(user, "viewPayroll");
 

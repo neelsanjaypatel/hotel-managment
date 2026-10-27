@@ -6,7 +6,7 @@ import { and, eq, gt, gte, inArray, lt, lte, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getDb, schema } from "@/db";
 import { requireAction, type HotelUser } from "./auth";
-import { addDays, bookingNo, isISODate, toPaise, todayIST } from "./format";
+import { addDays, bookingNo, isISODate, toPaise, todayIST, PAID_MODES } from "./format";
 import { UserError, amount, audit, checkEntryDate, isUniqueViolation, ok, owned, run, str, type FormState } from "./action-helpers";
 import { ensureDay } from "./ledger";
 
@@ -105,7 +105,7 @@ async function loadBooking(user: HotelUser, id: number) {
 }
 
 function payMode(fd: FormData, key: string) {
-  const m = z.enum(schema.payModeEnum.enumValues).safeParse(fd.get(key));
+  const m = z.enum(PAID_MODES).safeParse(fd.get(key));
   if (!m.success) throw new UserError("Choose how the money was paid.");
   return m.data;
 }

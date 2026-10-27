@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { and, between, eq, sql } from "drizzle-orm";
 import { requirePage, can } from "@/lib/auth";
 import { getDb, schema } from "@/db";
-import { dailySeries, groupCategories, partyBalances, rangeTotals } from "@/lib/ledger";
+import { dailySeries, dayRows, groupCategories, partyBalances, rangeTotals } from "@/lib/ledger";
 import { bookingsBetween } from "@/lib/bookings";
 import { monthProfit } from "@/lib/payroll";
 import { addDays, bookingNo, monthBounds, prettyDate, prettyMonth, rupees, todayIST, SALE_MODE_LABEL, SLOT_LABEL, UNIT_LABEL, isMonth } from "@/lib/format";
@@ -33,19 +33,10 @@ export default async function Dashboard({ searchParams }: PageProps<"/">) {
     partyBalances(h, db),
     db.select().from(expenseCategories).where(eq(expenseCategories.hotelId, h)),
     db.select().from(dayBooks).where(and(eq(dayBooks.hotelId, h), eq(dayBooks.date, today))),
-    // Closed days where counted cash differs from expected.
-    db.execute(sql`
-      select d.date, d.counted_cash - (d.opening_cash - d.cash_deposit
-        + coalesce((select sum(amount) from sales where hotel_id = d.hotel_id and date = d.date and mode = 'cash'), 0)
-        + coalesce((select sum(amount) from receipts where hotel_id = d.hotel_id and date = d.date and mode = 'cash'), 0)
-        - coalesce((select sum(amount) from expenses where hotel_id = d.hotel_id and date = d.date and paid_via = 'cash'), 0)
-        - coalesce((select sum(amount) from advances where hotel_id = d.hotel_id and date = d.date and paid_via = 'cash'), 0)
-        - coalesce((select sum(amount) from salary_payments where hotel_id = d.hotel_id and date = d.date and paid_via = 'cash'), 0))::int as diff
-      from day_books d where d.hotel_id = ${h} and d.status = 'closed' and d.date between ${from} and ${to}`),
+    // Closed days where counted cash differs from expected (same formula as the day-wise report).
+    dayRows(h, from, to, db),
   ]);
-  const shorts = ((shortRows as unknown as { rows?: { date: string; diff: number }[] }).rows ?? (shortRows as unknown as { date: string; diff: number }[]))
-    .map((r) => ({ date: String(r.date).slice(0, 10), diff: Number(r.diff) }))
-    .filter((r) => r.diff !== 0);
+  const shorts = shortRows.filter((r) => r.status === "closed" && r.diff != null && r.diff !== 0).map((r) => ({ date: r.date, diff: r.diff ?? 0 }));
   const shortTotal = shorts.reduce((a, r) => a + r.diff, 0);
   const totalDue = dues.reduce((a, d) => a + Math.max(0, d.due), 0);
   const groups = groupCategories(m.expByCat, cats);
@@ -54,6 +45,26 @@ export default async function Dashboard({ searchParams }: PageProps<"/">) {
   const maxMode = Math.max(1, ...m.salesByMode.map((u) => u.total));
   const setup = user.role === "admin" ? await setupSteps(h) : [];
   const profit = await monthProfit(h, month, db);
+  // Things left undone: attendance not marked today, yesterday's counter not closed.
+  const yesterday = addDays(today, -1);
+  const [[unmarked], [yBook], [hadYesterday]] = await Promise.all([
+    db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(schema.employees)
+      .where(
+        and(
+          eq(schema.employees.hotelId, h),
+          eq(schema.employees.active, true),
+          sql`not exists (select 1 from attendance a where a.employee_id = ${schema.employees.id} and a.date = ${today})`,
+        ),
+      ),
+    db.select({ status: dayBooks.status }).from(dayBooks).where(and(eq(dayBooks.hotelId, h), eq(dayBooks.date, yesterday))),
+    db.select({ n: sql<number>`count(*)::int` }).from(schema.sales).where(and(eq(schema.sales.hotelId, h), eq(schema.sales.date, yesterday))),
+  ]);
+  const reminders = [
+    unmarked.n > 0 && { text: `Attendance not marked yet for ${unmarked.n} ${unmarked.n === 1 ? "person" : "people"} today`, href: "/attendance" },
+    (yBook?.status === "open" || (!yBook && hadYesterday.n > 0)) && { text: "Yesterday's counter is not closed (cash not counted)", href: `/counter?date=${yesterday}` },
+  ].filter(Boolean) as { text: string; href: string }[];
   const soon = await bookingsBetween(h, today, addDays(today, 7), ["tentative", "confirmed"], db);
   const units = (["restaurant", "rooms", "banquet"] as const).filter((u) =>
     u === "restaurant" ? user.hotel.hasRestaurant : u === "rooms" ? user.hotel.hasRooms : user.hotel.hasBanquet,
@@ -63,8 +74,19 @@ export default async function Dashboard({ searchParams }: PageProps<"/">) {
   return (
     <>
       <PageHeader title="Dashboard" sub={`${prettyMonth(month)} · all sections`}>
+        <Link href={`/summary?month=${month}`} className="btn btn-ghost">Money summary</Link>
         <PeriodPicker name="month" type="month" value={month} max={today.slice(0, 7)} />
       </PageHeader>
+
+      {reminders.length > 0 && (
+        <div className="mb-4 space-y-2">
+          {reminders.map((r) => (
+            <Link key={r.href} href={r.href} className="block rounded-lg bg-warn-soft px-4 py-2.5 text-sm font-medium text-warn">
+              {r.text} ›
+            </Link>
+          ))}
+        </div>
+      )}
 
       {setup.some((s) => !s.done) && (
         <Card title="Get your hotel ready" className="mb-4">

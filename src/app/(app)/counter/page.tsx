@@ -3,16 +3,16 @@ import { and, desc, eq, gte, lt, sql } from "drizzle-orm";
 import { requirePage, can } from "@/lib/auth";
 import { getDb, schema } from "@/db";
 import { getDay, rangeTotals } from "@/lib/ledger";
-import { addDays, isISODate, prettyDate, prettyMonth, rupees, rupeesPlain, todayIST, PAY_MODE_LABEL, SALE_MODE_LABEL, UNIT_LABEL } from "@/lib/format";
+import { addDays, isISODate, payLabel, prettyDate, prettyMonth, rupees, rupeesPlain, todayIST, PAY_MODE_LABEL, SALE_MODE_LABEL, UNIT_LABEL } from "@/lib/format";
 import { deleteEntry, reopenDay, setOpeningCash, updateEntry } from "@/lib/actions";
 import { Badge, Card, Empty, PageHeader, Stat } from "@/components/ui";
 import { ActButton, ActionForm, Input, PeriodPicker } from "@/components/forms";
-import { AdvanceForm, EntryPanel, ExpenseForm, ReceiptForm, SaleForm, SalaryEditForm } from "./entry-forms";
+import { AdvanceForm, EntryPanel, ExpenseForm, PaidEditForm, ReceiptForm, SaleForm, TransferForm } from "./entry-forms";
 import { CloseDayForm } from "./close-day";
 
 export const metadata = { title: "Daily Counter" };
 
-type Kind = "sale" | "expense" | "advance" | "receipt" | "salary";
+type Kind = "sale" | "expense" | "advance" | "receipt" | "salary" | "supplier" | "drawing" | "transfer";
 
 const KIND: Record<Kind, { label: string; tone: "ok" | "out" | "warn" | "neutral"; sign: 1 | -1 }> = {
   sale: { label: "Sale", tone: "ok", sign: 1 },
@@ -20,6 +20,9 @@ const KIND: Record<Kind, { label: string; tone: "ok" | "out" | "warn" | "neutral
   expense: { label: "Expense", tone: "out", sign: -1 },
   advance: { label: "Advance", tone: "warn", sign: -1 },
   salary: { label: "Salary", tone: "warn", sign: -1 },
+  supplier: { label: "Supplier paid", tone: "warn", sign: -1 },
+  drawing: { label: "Partner took", tone: "warn", sign: -1 },
+  transfer: { label: "Cash ↔ Bank", tone: "neutral", sign: 1 },
 };
 
 export default async function CounterPage({ searchParams }: PageProps<"/counter">) {
@@ -30,17 +33,19 @@ export default async function CounterPage({ searchParams }: PageProps<"/counter"
   const date = isISODate(sp.date) && sp.date <= today ? sp.date : today;
   const db = await getDb();
   const { sales, expenses, advances, receipts, salaryPayments, parties, employees, expenseCategories: cats, users, dayBooks } = schema;
+  const { suppliers, supplierPayments, partnerDrawings, partners, cashTransfers, attendance } = schema;
 
   const h = user.hotelId;
   const day = await getDay(h, date, db);
-  const [t, saleRows, expRows, advRows, recRows, salRows, partyRows, empRows, catRows, closer, priorClosed, usage] = await Promise.all([
+  const [t, saleRows, expRows, advRows, recRows, salRows, partyRows, empRows, catRows, closer, priorClosed, usage, supRows, drawRows, trRows, supplierList, [marked]] = await Promise.all([
     rangeTotals(h, date, date, db),
     db.select({ s: sales, party: parties.name }).from(sales).leftJoin(parties, eq(parties.id, sales.partyId)).where(and(eq(sales.hotelId, h), eq(sales.date, date))),
     db
-      .select({ e: expenses, cat: cats.name, parentId: cats.parentId, worker: employees.name })
+      .select({ e: expenses, cat: cats.name, parentId: cats.parentId, worker: employees.name, supplier: suppliers.name })
       .from(expenses)
       .innerJoin(cats, eq(cats.id, expenses.categoryId))
       .leftJoin(employees, eq(employees.id, expenses.employeeId))
+      .leftJoin(suppliers, eq(suppliers.id, expenses.supplierId))
       .where(and(eq(expenses.hotelId, h), eq(expenses.date, date))),
     db.select({ a: advances, name: employees.name }).from(advances).innerJoin(employees, eq(employees.id, advances.employeeId)).where(and(eq(advances.hotelId, h), eq(advances.date, date))),
     db.select({ r: receipts, party: parties.name }).from(receipts).innerJoin(parties, eq(parties.id, receipts.partyId)).where(and(eq(receipts.hotelId, h), eq(receipts.date, date))),
@@ -62,6 +67,30 @@ export default async function CounterPage({ searchParams }: PageProps<"/counter"
       .groupBy(expenses.categoryId)
       .orderBy(desc(sql`count(*)`))
       .limit(6),
+    db
+      .select({ p: supplierPayments, name: suppliers.name })
+      .from(supplierPayments)
+      .innerJoin(suppliers, eq(suppliers.id, supplierPayments.supplierId))
+      .where(and(eq(supplierPayments.hotelId, h), eq(supplierPayments.date, date))),
+    db
+      .select({ p: partnerDrawings, name: partners.name })
+      .from(partnerDrawings)
+      .innerJoin(partners, eq(partners.id, partnerDrawings.partnerId))
+      .where(and(eq(partnerDrawings.hotelId, h), eq(partnerDrawings.date, date))),
+    db.select().from(cashTransfers).where(and(eq(cashTransfers.hotelId, h), eq(cashTransfers.date, date))),
+    db.select().from(suppliers).where(and(eq(suppliers.hotelId, h), eq(suppliers.active, true))).orderBy(suppliers.name),
+    // Attendance reminder: who is still unmarked on this date (managers: only their team).
+    db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(employees)
+      .where(
+        and(
+          eq(employees.hotelId, h),
+          eq(employees.active, true),
+          user.role === "manager" ? eq(employees.managerUserId, user.id) : undefined,
+          sql`not exists (select 1 from ${attendance} a where a.employee_id = ${employees.id} and a.date = ${date})`,
+        ),
+      ),
   ]);
 
   const open = day.status === "open";
@@ -74,7 +103,7 @@ export default async function CounterPage({ searchParams }: PageProps<"/counter"
     u === "restaurant" ? hotel.hasRestaurant : u === "rooms" ? hotel.hasRooms : hotel.hasBanquet,
   );
   const canChange = (kind: Kind, createdBy: number) =>
-    canEnter && (user.role === "admin" || createdBy === user.id) && (kind !== "salary" || can(user, "manageMaster"));
+    canEnter && (user.role === "admin" || createdBy === user.id) && ((kind !== "salary" && kind !== "drawing") || can(user, "manageMaster"));
   const expectedBeforeDeposit = day.openingCash + t.cashIn - t.cashOut;
 
   // "Food > Dairy" style labels, children listed under their parent.
@@ -91,7 +120,9 @@ export default async function CounterPage({ searchParams }: PageProps<"/counter"
   const empOptions = empRows.map((e) => ({ value: e.id, label: `${e.name} (${e.department})` }));
   const workerOptions = empRows.filter((e) => e.payType === "daily").map((e) => ({ value: e.id, label: e.name }));
   const creditParties = partyRows.filter((p) => p.kind !== "aggregator").map((p) => ({ value: p.id, label: p.name }));
-  const partyOptions = partyRows.map((p) => ({ value: p.id, label: p.name }));
+  const partyOptions = partyRows.map((p) => ({ value: p.id, label: p.name, kind: p.kind }));
+  const supplierOptions = supplierList.map((s) => ({ value: s.id, label: s.name }));
+  const unmarked = can(user, "markAttendance") ? marked.n : 0;
 
   // Every entry of the day in one list, newest first.
   const entries = [
@@ -100,19 +131,29 @@ export default async function CounterPage({ searchParams }: PageProps<"/counter"
       title: `${UNIT_LABEL[s.unit]} · ${SALE_MODE_LABEL[s.mode]}${party && s.mode === "credit" ? ` · ${party}` : ""}`,
       sub: s.reference,
     })),
-    ...expRows.map(({ e, cat, parentId, worker }) => ({
+    ...expRows.map(({ e, cat, parentId, worker, supplier }) => ({
       kind: "expense" as const, row: e, linked: false,
-      title: `${parentId ? `${catName.get(parentId)} › ` : ""}${cat} · ${PAY_MODE_LABEL[e.paidVia]}`,
-      sub: worker ?? e.vendor ?? e.note,
+      title: `${parentId ? `${catName.get(parentId)} › ` : ""}${cat} · ${payLabel(e.paidVia)}`,
+      sub: [worker ?? supplier ?? e.vendor, e.note].filter(Boolean).join(" · "),
     })),
-    ...advRows.map(({ a, name }) => ({ kind: "advance" as const, row: a, linked: false, title: `${name} · ${PAY_MODE_LABEL[a.paidVia]}`, sub: a.note })),
+    ...advRows.map(({ a, name }) => ({
+      kind: "advance" as const, row: a, linked: false, title: `${name} · ${PAY_MODE_LABEL[a.paidVia]}`,
+      sub: [a.installment ? `Loan, ${rupees(a.installment)}/month` : null, a.note].filter(Boolean).join(" · "),
+    })),
     ...recRows.map(({ r, party }) => ({
       kind: "receipt" as const, row: r, linked: !!r.bookingId,
-      title: `${party} · ${PAY_MODE_LABEL[r.mode]}`, sub: r.note,
+      title: `${party} · ${PAY_MODE_LABEL[r.mode]}`,
+      sub: [r.commission ? `+ ${rupees(r.commission)} commission` : null, r.note].filter(Boolean).join(" · "),
     })),
     ...salRows.map(({ p, name }) => ({
       kind: "salary" as const, row: p, linked: false,
       title: `${name} · ${PAY_MODE_LABEL[p.paidVia]}`, sub: `For ${prettyMonth(p.month)}${p.note ? ` · ${p.note}` : ""}`,
+    })),
+    ...supRows.map(({ p, name }) => ({ kind: "supplier" as const, row: p, linked: false, title: `${name} · ${PAY_MODE_LABEL[p.paidVia]}`, sub: p.note })),
+    ...drawRows.map(({ p, name }) => ({ kind: "drawing" as const, row: p, linked: false, title: `${name} · ${PAY_MODE_LABEL[p.paidVia]}`, sub: p.note })),
+    ...trRows.map((x) => ({
+      kind: "transfer" as const, row: x, linked: false,
+      title: x.direction === "to_bank" ? "Cash deposited to bank" : "Cash drawn from bank", sub: x.note,
     })),
   ].sort((a, b) => b.row.createdAt.getTime() - a.row.createdAt.getTime());
   const time = new Intl.DateTimeFormat("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" });
@@ -153,6 +194,15 @@ export default async function CounterPage({ searchParams }: PageProps<"/counter"
         </dl>
       </details>
 
+      {unmarked > 0 && date === today && (
+        <Link
+          href="/attendance"
+          className="mt-3 block rounded-lg bg-warn-soft px-4 py-2.5 text-sm font-medium text-warn"
+        >
+          Attendance not marked yet for {unmarked} {unmarked === 1 ? "person" : "people"} today ›
+        </Link>
+      )}
+
       <div className="mt-4">
         {canEnter ? (
           <EntryPanel
@@ -163,6 +213,7 @@ export default async function CounterPage({ searchParams }: PageProps<"/counter"
             quickCategories={quickCategories}
             wageCategoryIds={wageCategoryIds}
             workers={workerOptions}
+            suppliers={supplierOptions}
             employees={empOptions}
             parties={partyOptions}
           />
@@ -197,7 +248,7 @@ export default async function CounterPage({ searchParams }: PageProps<"/counter"
                       {time.format(en.row.createdAt)}{en.sub ? ` · ${en.sub}` : ""}{en.linked ? " · from booking" : ""}
                     </div>
                   </div>
-                  <div className={`num shrink-0 text-right font-semibold ${k.sign > 0 ? "text-income" : "text-expense"}`}>
+                  <div className={`num shrink-0 text-right font-semibold ${en.kind === "transfer" ? "" : k.sign > 0 ? "text-income" : "text-expense"}`}>
                     {k.sign > 0 ? "" : "-"}{rupees(en.row.amount)}
                   </div>
                 </div>
@@ -218,13 +269,15 @@ export default async function CounterPage({ searchParams }: PageProps<"/counter"
                           quickCategories={[]}
                           wageCategoryIds={wageCategoryIds}
                           workers={workerOptions}
+                          suppliers={supplierOptions}
                           action={update}
                           initial={initial}
                         />
                       )}
                       {en.kind === "advance" && <AdvanceForm date={date} employees={empOptions} action={update} initial={initial} />}
                       {en.kind === "receipt" && <ReceiptForm date={date} parties={partyOptions} action={update} initial={initial} />}
-                      {en.kind === "salary" && <SalaryEditForm action={update} initial={initial} />}
+                      {(en.kind === "salary" || en.kind === "supplier" || en.kind === "drawing") && <PaidEditForm action={update} initial={initial} />}
+                      {en.kind === "transfer" && <TransferForm date={date} action={update} initial={initial} />}
                       <div className="mt-3 border-t border-line pt-3">
                         <ActButton run={deleteEntry.bind(null, en.kind, en.row.id)} label={`Delete this ${k.label.toLowerCase()}`} confirm={`Delete this ${k.label.toLowerCase()}?`} />
                       </div>
@@ -271,6 +324,14 @@ export default async function CounterPage({ searchParams }: PageProps<"/counter"
               </div>
             </ActionForm>
           </div>
+        )}
+        {canEnter && (
+          <details className="mt-4 border-t border-line pt-3">
+            <summary className="cursor-pointer text-sm font-medium text-accent">Move cash ↔ bank during the day</summary>
+            <div className="mt-3">
+              <TransferForm date={date} />
+            </div>
+          </details>
         )}
         {canEnter && can(user, "closeDay") && (
           <div className="mt-4 border-t border-line pt-4">

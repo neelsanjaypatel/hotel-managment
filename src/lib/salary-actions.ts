@@ -4,12 +4,12 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { getDb, schema } from "@/db";
 import { requireAction } from "./auth";
-import { isMonth, prettyMonth, rupees, todayIST } from "./format";
+import { isMonth, prettyMonth, rupees, todayIST, PAID_MODES } from "./format";
 import { monthPayroll } from "./payroll";
 import { UserError, amount, audit, checkEntryDate, ok, owned, run, str, type FormState } from "./action-helpers";
 
 function payMode(fd: FormData) {
-  const m = z.enum(schema.payModeEnum.enumValues).safeParse(fd.get("paidVia"));
+  const m = z.enum(PAID_MODES).safeParse(fd.get("paidVia"));
   if (!m.success) throw new UserError("Choose how the salary was paid.");
   return m.data;
 }

@@ -83,6 +83,11 @@ export const UNIT_LABEL: Record<string, string> = {
   banquet: "Banquet",
 };
 
+// Ways money actually moves. "credit" (pay a supplier later) exists only for expenses.
+export const PAID_MODES = ["cash", "upi", "card", "bank"] as const;
+
+export const payLabel = (mode: string) => PAY_MODE_LABEL[mode] ?? (mode === "credit" ? "On credit" : mode);
+
 export const PAY_MODE_LABEL: Record<string, string> = {
   cash: "Cash",
   upi: "UPI",

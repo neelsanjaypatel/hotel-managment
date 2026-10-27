@@ -2,13 +2,14 @@
 
 import { useState } from "react";
 import { ActionForm, Chips, Input, Select } from "@/components/forms";
-import { addAdvance, addExpense, addReceipt, addSale, type FormState } from "@/lib/actions";
+import { addAdvance, addExpense, addReceipt, addSale, addTransfer, type FormState } from "@/lib/actions";
 import { PAY_MODE_LABEL, SALE_MODE_LABEL, UNIT_LABEL, rupeesPlain } from "@/lib/format";
 
-type Opt = { value: number; label: string };
+type Opt = { value: number; label: string; kind?: string };
 type Action = (state: FormState, fd: FormData) => Promise<FormState>;
 const opts = (m: Record<string, string>) => Object.entries(m).map(([value, label]) => ({ value, label }));
 const PAY_MODES = opts(PAY_MODE_LABEL);
+const EXPENSE_MODES = [...PAY_MODES, { value: "credit", label: "On credit" }];
 
 // Big amount box: numeric keypad on phones, focus returns here after each save.
 function AmountInput({ defaultValue }: { defaultValue?: string }) {
@@ -61,9 +62,10 @@ export function ExpenseForm({
   quickCategories,
   wageCategoryIds,
   workers,
+  suppliers,
   action,
   initial,
-}: Common & { categories: Opt[]; quickCategories: Opt[]; wageCategoryIds: number[]; workers: Opt[] }) {
+}: Common & { categories: Opt[]; quickCategories: Opt[]; wageCategoryIds: number[]; workers: Opt[]; suppliers: Opt[] }) {
   const [cat, setCat] = useState(val(initial, "categoryId") ?? "");
   const [paidVia, setPaidVia] = useState(val(initial, "paidVia") ?? "cash");
   const isWages = wageCategoryIds.includes(Number(cat));
@@ -99,7 +101,17 @@ export function ExpenseForm({
             ))}
           </select>
         </label>
-        <Chips name="paidVia" label="Paid by" options={PAY_MODES} value={paidVia} onChange={setPaidVia} />
+        <Chips name="paidVia" label="Paid by" options={EXPENSE_MODES} value={paidVia} onChange={setPaidVia} />
+        {(paidVia === "credit" || suppliers.length > 0) && (
+          <Select
+            name="supplierId"
+            label={paidVia === "credit" ? "Supplier (to be paid later)" : "Supplier (optional)"}
+            options={suppliers}
+            required={paidVia === "credit"}
+            placeholder={paidVia === "credit" ? "Choose supplier..." : "None"}
+            defaultValue={val(initial, "supplierId")}
+          />
+        )}
         <div className="grid grid-cols-2 gap-3">
           <AmountInput defaultValue={money(initial)} />
           {isWages ? (
@@ -116,16 +128,38 @@ export function ExpenseForm({
 
 export function AdvanceForm({ date, employees, action, initial }: Common & { employees: Opt[] }) {
   const [paidVia, setPaidVia] = useState(val(initial, "paidVia") ?? "cash");
+  const [recover, setRecover] = useState(initial?.installment ? "monthly" : "full");
   return (
     <ActionForm action={action ?? addAdvance} submit={initial ? "Save changes" : "Give advance"} resetOnOk={!initial} wide>
       {!initial && <input type="hidden" name="date" value={date} />}
       <div className="space-y-3">
         <Select name="employeeId" label="Employee" options={employees} required placeholder="Choose..." defaultValue={val(initial, "employeeId")} />
         <Chips name="paidVia" label="Paid by" options={PAY_MODES} value={paidVia} onChange={setPaidVia} />
+        <Chips
+          name="recover"
+          label="Recover"
+          options={[
+            { value: "full", label: "From this month's salary" },
+            { value: "monthly", label: "Loan, monthly installments" },
+          ]}
+          value={recover}
+          onChange={setRecover}
+        />
         <div className="grid grid-cols-2 gap-3">
           <AmountInput defaultValue={money(initial)} />
-          <Input name="note" label="Note" placeholder="optional" defaultValue={val(initial, "note")} />
+          {recover === "monthly" ? (
+            <Input
+              name="installment"
+              label="Cut per month (₹)"
+              inputMode="decimal"
+              required
+              defaultValue={typeof initial?.installment === "number" ? rupeesPlain(initial.installment) : undefined}
+            />
+          ) : (
+            <Input name="note" label="Note" placeholder="optional" defaultValue={val(initial, "note")} />
+          )}
         </div>
+        {recover === "monthly" && <Input name="note" label="Note" placeholder="optional" defaultValue={val(initial, "note")} />}
       </div>
     </ActionForm>
   );
@@ -133,23 +167,43 @@ export function AdvanceForm({ date, employees, action, initial }: Common & { emp
 
 export function ReceiptForm({ date, parties, action, initial }: Common & { parties: Opt[] }) {
   const [mode, setMode] = useState(val(initial, "mode") ?? "bank");
+  const [partyId, setPartyId] = useState(val(initial, "partyId") ?? "");
+  // Zomato / Swiggy pay out less than they billed; the gap is their commission.
+  const aggregator = parties.find((p) => String(p.value) === partyId)?.kind === "aggregator";
   return (
     <ActionForm action={action ?? addReceipt} submit={initial ? "Save changes" : "Record payment"} resetOnOk={!initial} wide>
       {!initial && <input type="hidden" name="date" value={date} />}
       <div className="space-y-3">
-        <Select name="partyId" label="Received from" options={parties} required placeholder="Choose..." defaultValue={val(initial, "partyId")} />
+        <Select name="partyId" label="Received from" options={parties} required placeholder="Choose..." defaultValue={partyId} onChange={setPartyId} />
         <Chips name="mode" label="Received in" options={PAY_MODES} value={mode} onChange={setMode} />
         <div className="grid grid-cols-2 gap-3">
           <AmountInput defaultValue={money(initial)} />
-          <Input name="note" label="Note" placeholder="e.g. Zomato weekly payout" defaultValue={val(initial, "note")} />
+          {aggregator || (typeof initial?.commission === "number" && initial.commission > 0) ? (
+            <Input
+              name="commission"
+              label="Commission / tax kept by them (₹)"
+              inputMode="decimal"
+              placeholder="0"
+              defaultValue={typeof initial?.commission === "number" && initial.commission ? rupeesPlain(initial.commission) : undefined}
+            />
+          ) : (
+            <Input name="note" label="Note" placeholder="optional" defaultValue={val(initial, "note")} />
+          )}
         </div>
+        {(aggregator || (typeof initial?.commission === "number" && initial.commission > 0)) && (
+          <>
+            <p className="text-xs text-muted">Amount = money that reached you. Commission settles the rest of their dues and counts as an expense.</p>
+            <Input name="note" label="Note" placeholder="e.g. Zomato weekly payout" defaultValue={val(initial, "note")} />
+          </>
+        )}
       </div>
     </ActionForm>
   );
 }
 
-// Salary payments are made from Payroll; here only amount / mode / note can be corrected.
-export function SalaryEditForm({ action, initial }: { action: Action; initial: Record<string, unknown> }) {
+// Salary, supplier and partner payments are made elsewhere; here only amount / mode / note
+// can be corrected.
+export function PaidEditForm({ action, initial }: { action: Action; initial: Record<string, unknown> }) {
   const [paidVia, setPaidVia] = useState(val(initial, "paidVia") ?? "cash");
   return (
     <ActionForm action={action} submit="Save changes" resetOnOk={false} wide>
@@ -158,6 +212,62 @@ export function SalaryEditForm({ action, initial }: { action: Action; initial: R
         <div className="grid grid-cols-2 gap-3">
           <AmountInput defaultValue={money(initial)} />
           <Input name="note" label="Note" placeholder="optional" defaultValue={val(initial, "note")} />
+        </div>
+      </div>
+    </ActionForm>
+  );
+}
+
+// Money moved between the drawer and the bank during the day.
+export function TransferForm({ date, action, initial }: { date: string; action?: Action; initial?: Record<string, unknown> }) {
+  const [direction, setDirection] = useState(val(initial, "direction") ?? "to_bank");
+  return (
+    <ActionForm action={action ?? addTransfer} submit={initial ? "Save changes" : "Save"} resetOnOk={!initial} wide>
+      {!initial && <input type="hidden" name="date" value={date} />}
+      <div className="space-y-3">
+        <Chips
+          name="direction"
+          label="Direction"
+          options={[
+            { value: "to_bank", label: "Cash → Bank (deposit)" },
+            { value: "to_cash", label: "Bank → Cash (withdraw)" },
+          ]}
+          value={direction}
+          onChange={setDirection}
+        />
+        <div className="grid grid-cols-2 gap-3">
+          <AmountInput defaultValue={money(initial)} />
+          <Input name="note" label="Note" placeholder="optional" defaultValue={val(initial, "note")} />
+        </div>
+      </div>
+    </ActionForm>
+  );
+}
+
+// Pay a supplier or record a partner withdrawal: amount, mode, note, plus hidden ids.
+export function PaidForm({
+  action,
+  hidden,
+  submit,
+  extra,
+}: {
+  action: Action;
+  hidden: Record<string, string | number>;
+  submit: string;
+  extra?: React.ReactNode;
+}) {
+  const [paidVia, setPaidVia] = useState("cash");
+  return (
+    <ActionForm action={action} submit={submit} wide>
+      {Object.entries(hidden).map(([k, v]) => (
+        <input key={k} type="hidden" name={k} value={v} />
+      ))}
+      <div className="space-y-3">
+        {extra}
+        <Chips name="paidVia" label="Paid by" options={PAY_MODES} value={paidVia} onChange={setPaidVia} />
+        <div className="grid grid-cols-2 gap-3">
+          <AmountInput />
+          <Input name="note" label="Note" placeholder="optional" />
         </div>
       </div>
     </ActionForm>
@@ -180,6 +290,7 @@ export function EntryPanel(props: {
   quickCategories: Opt[];
   wageCategoryIds: number[];
   workers: Opt[];
+  suppliers: Opt[];
   employees: Opt[];
   parties: Opt[];
 }) {
@@ -211,6 +322,7 @@ export function EntryPanel(props: {
             quickCategories={props.quickCategories}
             wageCategoryIds={props.wageCategoryIds}
             workers={props.workers}
+            suppliers={props.suppliers}
           />
         )}
         {tab === "advance" && <AdvanceForm date={props.date} employees={props.employees} />}

@@ -65,6 +65,35 @@ the dev server normally; a hard kill can leave the local database unreadable.
   and of the financial year (April-March) so far. A partner's own row is
   highlighted when their login is linked.
 
+## Suppliers, money summary and other money flows
+
+- **Suppliers**: purchases taken on credit are expenses with "Paid by: On
+  credit" and a supplier. They count as expense the day the goods arrive and
+  stay owed until "Pay supplier" (from the supplier's page) records a payment,
+  which comes out of that day's drawer or bank. Each supplier has a date-wise
+  account with a running balance.
+- **Zomato / Swiggy commission**: when recording their payout, enter what
+  reached you and the commission they kept; the commission settles their dues
+  and counts as an expense.
+- **Loans to staff**: an advance can be a loan recovered at a fixed amount per
+  month (starting the month it is given) instead of all from that month's
+  salary. Payroll, payslips and the summary show what is left.
+- **Salary history**: changing a salary asks from which date it applies;
+  earlier months keep the old rate. Employee page lists the history.
+- **Partner withdrawals**: money a partner takes out is recorded on the
+  Partners page (cash / bank from today's counter, not an expense). The page
+  shows each partner's year share, what they took, and what is still theirs.
+- **Cash <-> bank** during the day (deposit or withdraw) from the counter's
+  cash drawer card; the day close also has an optional note-by-note count.
+- **Money summary** (owner and partners): month profit, cash in drawer,
+  what others owe (dues, staff loans) and what the hotel owes (suppliers,
+  unpaid salary, booking advances held, partners' share not yet taken).
+- **My account**: everyone can change their own password. Owner can change a
+  login's role or linked employee in Settings, and download all data as one
+  Excel file (`/export`).
+- Dashboard and counter remind about attendance not marked today and
+  yesterday's counter not closed.
+
 ## Counter, edits and activity log
 
 - The counter shows one form at a time (Sale / Expense / Advance / Received)

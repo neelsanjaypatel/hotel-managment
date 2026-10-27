@@ -5,8 +5,8 @@ import { redirect } from "next/navigation";
 import { and, asc, eq, gt, inArray, lt, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getDb, schema } from "@/db";
-import { hashPassword, login, loginLocked, logout, requireAction, type HotelUser } from "./auth";
-import { addDays, isISODate, toPaise, todayIST } from "./format";
+import { getUser, hashPassword, keepOnlyThisSession, login, loginLocked, logout, requireAction, verifyPassword, type HotelUser } from "./auth";
+import { addDays, isISODate, toPaise, todayIST, PAID_MODES } from "./format";
 import { UserError, amount, audit, checkEntryDate, fail, isUniqueViolation, ok, owned, run, str, type FormState } from "./action-helpers";
 import type { AttendanceStatus } from "@/db/schema";
 
@@ -34,7 +34,7 @@ const saleSchema = z.object({
 });
 
 function payModeOf(fd: FormData, key: string, msg: string) {
-  const m = z.enum(schema.payModeEnum.enumValues).safeParse(fd.get(key));
+  const m = z.enum(PAID_MODES).safeParse(fd.get(key));
   if (!m.success) throw new UserError(msg);
   return m.data;
 }
@@ -64,27 +64,49 @@ async function parseSale(user: HotelUser, fd: FormData) {
   return { ...p.data, amount: amount(fd), partyId, reference: str(fd, "reference") };
 }
 
+// Optional money field (blank = 0), never negative.
+function optionalAmount(fd: FormData, key: string, msg: string) {
+  const raw = String(fd.get(key) ?? "").trim();
+  if (!raw) return 0;
+  const v = toPaise(raw);
+  if (v == null || v < 0) throw new UserError(msg);
+  return v;
+}
+
 async function parseExpense(user: HotelUser, fd: FormData) {
   const cat = await owned(schema.expenseCategories, Number(fd.get("categoryId")), user.hotelId, "category");
-  const paidVia = payModeOf(fd, "paidVia", "Choose how it was paid.");
+  // "credit" = goods taken from a supplier now, paid later: needs the supplier.
+  const paidVia = fd.get("paidVia") === "credit" ? ("credit" as const) : payModeOf(fd, "paidVia", "Choose how it was paid.");
   let employeeId: number | null = null;
   if (cat.isWages) {
     employeeId = Number(fd.get("employeeId"));
     await owned(schema.employees, employeeId, user.hotelId, "worker");
   }
-  return { categoryId: cat.id as number, amount: amount(fd), paidVia, vendor: str(fd, "vendor"), note: str(fd, "note"), employeeId };
+  const supplierId = Number(fd.get("supplierId")) || null;
+  if (supplierId) await owned(schema.suppliers, supplierId, user.hotelId, "supplier");
+  if (paidVia === "credit" && !supplierId) throw new UserError("Choose the supplier this is owed to.");
+  return { categoryId: cat.id as number, amount: amount(fd), paidVia, vendor: str(fd, "vendor"), note: str(fd, "note"), employeeId, supplierId };
 }
 
 async function parseAdvance(user: HotelUser, fd: FormData) {
   const employeeId = Number(fd.get("employeeId"));
   await owned(schema.employees, employeeId, user.hotelId, "employee");
-  return { employeeId, amount: amount(fd), paidVia: payModeOf(fd, "paidVia", "Choose how it was paid."), note: str(fd, "note") };
+  const total = amount(fd);
+  // A loan is recovered in monthly installments instead of all from this month's salary.
+  let installment: number | null = null;
+  if (fd.get("recover") === "monthly") {
+    installment = optionalAmount(fd, "installment", "Enter a valid monthly installment.");
+    if (!installment) throw new UserError("Enter how much to recover each month.");
+    if (installment > total) throw new UserError("Monthly installment cannot be more than the loan.");
+  }
+  return { employeeId, amount: total, paidVia: payModeOf(fd, "paidVia", "Choose how it was paid."), installment, note: str(fd, "note") };
 }
 
 async function parseReceipt(user: HotelUser, fd: FormData) {
   const partyId = Number(fd.get("partyId"));
   await owned(schema.parties, partyId, user.hotelId, "party who paid");
-  return { partyId, mode: payModeOf(fd, "mode", "Choose how it was received."), amount: amount(fd), note: str(fd, "note") };
+  const commission = optionalAmount(fd, "commission", "Enter a valid commission amount.");
+  return { partyId, mode: payModeOf(fd, "mode", "Choose how it was received."), amount: amount(fd), commission, note: str(fd, "note") };
 }
 
 export async function addSale(_: FormState, fd: FormData): Promise<FormState> {
@@ -145,13 +167,27 @@ const ENTRY_TABLES = {
   advance: schema.advances,
   receipt: schema.receipts,
   salary: schema.salaryPayments,
+  supplier: schema.supplierPayments,
+  drawing: schema.partnerDrawings,
+  transfer: schema.cashTransfers,
 } as const;
+
+// Salary and partner withdrawals are the owner's to record, change or remove.
+const OWNER_ONLY = new Set<keyof typeof ENTRY_TABLES>(["salary", "drawing"]);
+
+function parseTransfer(fd: FormData) {
+  const direction = z.enum(["to_bank", "to_cash"]).safeParse(fd.get("direction"));
+  if (!direction.success) throw new UserError("Choose cash to bank or bank to cash.");
+  return { direction: direction.data, amount: amount(fd), note: str(fd, "note") };
+}
+
+const parsePaid = (fd: FormData) => ({ amount: amount(fd), paidVia: payModeOf(fd, "paidVia", "Choose how it was paid."), note: str(fd, "note") });
 
 // Fix a typo: the person who entered it (or admin) can delete while the day is open.
 export async function deleteEntry(kind: keyof typeof ENTRY_TABLES, id: number): Promise<FormState> {
   return run(async () => {
-    const user = await requireAction("enterCounter");
     if (!Object.hasOwn(ENTRY_TABLES, kind) || !Number.isInteger(id)) throw new UserError("Unknown entry.");
+    const user = await requireAction(OWNER_ONLY.has(kind) ? "manageMaster" : "enterCounter");
     const table = ENTRY_TABLES[kind];
     const db = await getDb();
     const where = and(eq(table.id, id), eq(table.hotelId, user.hotelId));
@@ -179,8 +215,8 @@ export async function deleteEntry(kind: keyof typeof ENTRY_TABLES, id: number): 
 // keeps the values before and after.
 export async function updateEntry(kind: keyof typeof ENTRY_TABLES, id: number, _: FormState, fd: FormData): Promise<FormState> {
   return run(async () => {
-    const user = await requireAction(kind === "salary" ? "manageMaster" : "enterCounter");
     if (!Object.hasOwn(ENTRY_TABLES, kind) || !Number.isInteger(id)) throw new UserError("Unknown entry.");
+    const user = await requireAction(OWNER_ONLY.has(kind) ? "manageMaster" : "enterCounter");
     const table = ENTRY_TABLES[kind];
     const db = await getDb();
     const where = and(eq(table.id, id), eq(table.hotelId, user.hotelId));
@@ -198,7 +234,9 @@ export async function updateEntry(kind: keyof typeof ENTRY_TABLES, id: number, _
             ? await parseAdvance(user, fd)
             : kind === "receipt"
               ? await parseReceipt(user, fd)
-              : { amount: amount(fd), paidVia: payModeOf(fd, "paidVia", "Choose how it was paid."), note: str(fd, "note") };
+              : kind === "transfer"
+                ? parseTransfer(fd)
+                : parsePaid(fd);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [after] = await db.update(table).set(values as any).where(where).returning();
     await audit(user, "update", kind, id, { before, after });
@@ -370,13 +408,32 @@ export async function saveEmployee(_: FormState, fd: FormData): Promise<FormStat
         throw new UserError(`Your ${plan.name} plan allows ${plan.maxEmployees} employees. Upgrade from Billing to add more.`);
       }
     }
-    const values = { ...p.data, phone: p.data.phone || null, designation: p.data.designation || null, rate, managerUserId, active };
+    // A changed salary applies from the chosen date; earlier months keep the old rate.
+    const rateFrom = fd.get("rateFrom");
+    const rateChanged = !!existing && existing.rate !== rate;
+    if (rateChanged && !isISODate(rateFrom)) throw new UserError("Choose the date the new salary applies from.");
+    const today = todayIST();
+    // employees.rate is the rate in force today; a raise dated in the future waits.
+    const currentRate = rateChanged && (rateFrom as string) > today ? (existing!.rate as number) : rate;
+    const values = { ...p.data, phone: p.data.phone || null, designation: p.data.designation || null, rate: currentRate, managerUserId, active };
     try {
       if (id) {
-        await db.update(schema.employees).set(values).where(and(eq(schema.employees.id, id), eq(schema.employees.hotelId, user.hotelId)));
-        await audit(user, "update", "employee", id, values);
+        await db.transaction(async (tx) => {
+          await tx.update(schema.employees).set(values).where(and(eq(schema.employees.id, id), eq(schema.employees.hotelId, user.hotelId)));
+          if (rateChanged) {
+            await tx
+              .insert(schema.employeeRates)
+              .values({ hotelId: user.hotelId, employeeId: id, fromDate: rateFrom as string, rate })
+              .onConflictDoUpdate({ target: [schema.employeeRates.employeeId, schema.employeeRates.fromDate], set: { rate } });
+          }
+        });
+        await audit(user, "update", "employee", id, { before: existing, after: { ...values, rate, rateFrom: rateChanged ? rateFrom : undefined } });
       } else {
-        const [row] = await db.insert(schema.employees).values({ ...values, hotelId: user.hotelId }).returning();
+        const row = await db.transaction(async (tx) => {
+          const [r] = await tx.insert(schema.employees).values({ ...values, hotelId: user.hotelId }).returning();
+          await tx.insert(schema.employeeRates).values({ hotelId: user.hotelId, employeeId: r.id, fromDate: p.data.joinDate, rate });
+          return r;
+        });
         await audit(user, "create", "employee", row.id, values);
       }
     } catch (e) {
@@ -568,5 +625,124 @@ export async function removePartner(partnerId: number): Promise<FormState> {
     await audit(admin, "remove", "partner", partnerId);
     revalidatePath("/", "layout");
     return ok("Partner removed.");
+  });
+}
+
+// ---------- suppliers, partner withdrawals, cash <-> bank ----------
+
+export async function saveSupplier(_: FormState, fd: FormData): Promise<FormState> {
+  return run(async () => {
+    const admin = await requireAction("manageMaster");
+    const name = str(fd, "name");
+    if (!name) throw new UserError("Supplier name is required.");
+    const id = Number(fd.get("id")) || null;
+    if (id) await owned(schema.suppliers, id, admin.hotelId, "supplier");
+    const values = { name, phone: str(fd, "phone"), note: str(fd, "note"), active: fd.get("active") !== "off" };
+    const db = await getDb();
+    if (id) {
+      await db.update(schema.suppliers).set(values).where(and(eq(schema.suppliers.id, id), eq(schema.suppliers.hotelId, admin.hotelId)));
+      await audit(admin, "update", "supplier", id, values);
+    } else {
+      const [row] = await db.insert(schema.suppliers).values({ ...values, hotelId: admin.hotelId }).returning();
+      await audit(admin, "create", "supplier", row.id, values);
+    }
+    revalidatePath("/", "layout");
+    return ok(id ? "Supplier updated." : "Supplier added.");
+  });
+}
+
+// Pay a supplier what is owed for goods taken on credit; money leaves today's counter.
+export async function paySupplier(_: FormState, fd: FormData): Promise<FormState> {
+  return run(async () => {
+    const user = await requireAction("enterCounter");
+    const supplierId = Number(fd.get("supplierId"));
+    await owned(schema.suppliers, supplierId, user.hotelId, "supplier");
+    const date = await checkEntryDate(user, todayIST());
+    const db = await getDb();
+    const [row] = await db
+      .insert(schema.supplierPayments)
+      .values({ hotelId: user.hotelId, supplierId, date, ...parsePaid(fd), createdBy: user.id })
+      .returning();
+    await audit(user, "create", "supplier", row.id, row);
+    revalidatePath("/", "layout");
+    return ok("Payment to supplier recorded.");
+  });
+}
+
+export async function addDrawing(_: FormState, fd: FormData): Promise<FormState> {
+  return run(async () => {
+    const admin = await requireAction("manageMaster");
+    const partnerId = Number(fd.get("partnerId"));
+    await owned(schema.partners, partnerId, admin.hotelId, "partner");
+    const date = await checkEntryDate(admin, todayIST());
+    const db = await getDb();
+    const [row] = await db
+      .insert(schema.partnerDrawings)
+      .values({ hotelId: admin.hotelId, partnerId, date, ...parsePaid(fd), createdBy: admin.id })
+      .returning();
+    await audit(admin, "create", "drawing", row.id, row);
+    revalidatePath("/", "layout");
+    return ok("Withdrawal recorded.");
+  });
+}
+
+export async function addTransfer(_: FormState, fd: FormData): Promise<FormState> {
+  return run(async () => {
+    const user = await requireAction("enterCounter");
+    const date = await checkEntryDate(user, fd.get("date"));
+    const db = await getDb();
+    const [row] = await db
+      .insert(schema.cashTransfers)
+      .values({ hotelId: user.hotelId, date, ...parseTransfer(fd), createdBy: user.id })
+      .returning();
+    await audit(user, "create", "transfer", row.id, row);
+    revalidatePath("/", "layout");
+    return ok(row.direction === "to_bank" ? "Cash moved to bank." : "Cash drawn from bank.");
+  });
+}
+
+// ---------- logins ----------
+
+// Any logged-in person changes their own password; other devices are signed out.
+export async function changeMyPassword(_: FormState, fd: FormData): Promise<FormState> {
+  return run(async () => {
+    const me = await getUser();
+    if (!me) throw new UserError("Please log in again.");
+    const current = String(fd.get("current") ?? "");
+    const next = String(fd.get("password") ?? "");
+    if (next.length < 8) throw new UserError("New password must be at least 8 characters.");
+    if (next !== String(fd.get("confirm") ?? "")) throw new UserError("The two new passwords do not match.");
+    const db = await getDb();
+    const [u] = await db.select().from(schema.users).where(eq(schema.users.id, me.id));
+    if (!u || !(await verifyPassword(current, u.passwordHash))) throw new UserError("Current password is wrong.");
+    await db.update(schema.users).set({ passwordHash: await hashPassword(next) }).where(eq(schema.users.id, me.id));
+    await keepOnlyThisSession(me.id);
+    if (me.hotelId) {
+      await db.insert(schema.auditLog).values({ hotelId: me.hotelId, userId: me.id, action: "change_password", entity: "user", entityId: String(me.id) });
+    }
+    return ok("Password changed. Other devices have been logged out.");
+  });
+}
+
+// Owner changes an existing login's role or the employee it is linked to.
+export async function updateUserAccess(_: FormState, fd: FormData): Promise<FormState> {
+  return run(async () => {
+    const admin = await requireAction("manageMaster");
+    const userId = Number(fd.get("userId"));
+    await owned(schema.users, userId, admin.hotelId, "login");
+    const role = z.enum(HOTEL_ROLES).safeParse(fd.get("role"));
+    if (!role.success) throw new UserError("Choose a role.");
+    if (userId === admin.id && role.data !== "admin") throw new UserError("You cannot remove your own owner access.");
+    const employeeId = Number(fd.get("employeeId")) || null;
+    if (employeeId) await owned(schema.employees, employeeId, admin.hotelId, "employee");
+    if (role.data === "employee" && !employeeId) throw new UserError("Employee logins must be linked to an employee.");
+    const db = await getDb();
+    await db
+      .update(schema.users)
+      .set({ role: role.data, employeeId })
+      .where(and(eq(schema.users.id, userId), eq(schema.users.hotelId, admin.hotelId)));
+    await audit(admin, "update", "user", userId, { role: role.data, employeeId });
+    revalidatePath("/", "layout");
+    return ok("Login updated.");
   });
 }

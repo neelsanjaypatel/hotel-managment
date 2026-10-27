@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { requirePage } from "@/lib/auth";
 import { getDb, schema } from "@/db";
-import { removePartner, resetPassword, saveCategory, saveHotelProfile, savePartner, saveUser, setUserActive } from "@/lib/actions";
+import { removePartner, resetPassword, saveCategory, saveHotelProfile, savePartner, saveUser, setUserActive, updateUserAccess } from "@/lib/actions";
 import { Badge, Card, PageHeader } from "@/components/ui";
 import { ActButton, ActionForm, Input, Select } from "@/components/forms";
 
@@ -76,6 +76,24 @@ export default async function SettingsPage() {
                     {u.id !== me.id && (
                       <span className="inline-flex flex-wrap items-center justify-end gap-3">
                         <details className="text-left">
+                          <summary className="cursor-pointer text-xs text-muted">Role / employee</summary>
+                          <div className="mt-2 w-64">
+                            <ActionForm action={updateUserAccess} submit="Save" resetOnOk={false}>
+                              <input type="hidden" name="userId" value={u.id} />
+                              <div className="space-y-2">
+                                <Select name="role" label="Role" options={ROLES} defaultValue={u.role} />
+                                <Select
+                                  name="employeeId"
+                                  label="Linked employee (for My Salary)"
+                                  options={empRows.map((e) => ({ value: e.id, label: e.name }))}
+                                  defaultValue={u.employeeId ?? ""}
+                                  placeholder="None"
+                                />
+                              </div>
+                            </ActionForm>
+                          </div>
+                        </details>
+                        <details className="text-left">
                           <summary className="cursor-pointer text-xs text-muted">Change password</summary>
                           <div className="mt-2 w-60">
                             <ActionForm action={resetPassword} submit="Set password">
@@ -109,6 +127,11 @@ export default async function SettingsPage() {
             </div>
           </ActionForm>
         </div>
+      </Card>
+
+      <Card title="Your data" className="mt-4">
+        <p className="text-sm text-muted">Download everything entered for this hotel (sales, expenses, staff, attendance, salaries, bookings, suppliers...) as one Excel file. Keep a copy every month.</p>
+        <a href="/export" className="btn btn-ghost mt-3">Download all data (Excel)</a>
       </Card>
 
       <Card title={`Partners and profit share · ${(allocatedBp / 100).toString()}% allocated`} className="mt-4">

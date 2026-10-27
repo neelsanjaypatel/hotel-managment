@@ -3,7 +3,8 @@ import { and, between, desc, eq, lt, sql } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { getDb, schema, type DB } from "@/db";
 
-const { sales, receipts, expenses, advances, dayBooks, expenseCategories, parties, salaryPayments } = schema;
+const { sales, receipts, expenses, advances, dayBooks, expenseCategories, parties, salaryPayments, supplierPayments, partnerDrawings, cashTransfers } =
+  schema;
 
 type ModeRow = { key: string; total: number };
 
@@ -23,45 +24,69 @@ const inRange = (t: { hotelId: AnyPgColumn; date: AnyPgColumn }, hotelId: number
 export type Totals = Awaited<ReturnType<typeof rangeTotals>>;
 
 // All income / expense numbers for a date range (a single day when from = to).
+// Money leaving the drawer or bank comes from several tables; only expenses and the
+// commission Zomato / Swiggy keep back are costs. Advances, salary, supplier payments
+// and partner withdrawals move money without being an expense of that day.
 export async function rangeTotals(hotelId: number, from: string, to: string, db?: DB) {
   db ??= await getDb();
-  const [salesByMode, salesByUnit, receiptsByMode, expByVia, expByCat, advByVia, salByVia] = await Promise.all([
-    db.select({ key: sales.mode, total: sum(sales.amount) }).from(sales).where(inRange(sales, hotelId, from, to)).groupBy(sales.mode),
-    db.select({ key: sales.unit, total: sum(sales.amount) }).from(sales).where(inRange(sales, hotelId, from, to)).groupBy(sales.unit),
-    db.select({ key: receipts.mode, total: sum(receipts.amount) }).from(receipts).where(inRange(receipts, hotelId, from, to)).groupBy(receipts.mode),
-    db.select({ key: expenses.paidVia, total: sum(expenses.amount) }).from(expenses).where(inRange(expenses, hotelId, from, to)).groupBy(expenses.paidVia),
+  const byMode = <T extends { hotelId: AnyPgColumn; date: AnyPgColumn; amount: AnyPgColumn; paidVia: AnyPgColumn }>(table: T) =>
     db
-      .select({ id: expenseCategories.id, name: expenseCategories.name, parentId: expenseCategories.parentId, total: sum(expenses.amount) })
-      .from(expenses)
-      .innerJoin(expenseCategories, eq(expenseCategories.id, expenses.categoryId))
-      .where(inRange(expenses, hotelId, from, to))
-      .groupBy(expenseCategories.id, expenseCategories.name, expenseCategories.parentId),
-    db.select({ key: advances.paidVia, total: sum(advances.amount) }).from(advances).where(inRange(advances, hotelId, from, to)).groupBy(advances.paidVia),
-    db
-      .select({ key: salaryPayments.paidVia, total: sum(salaryPayments.amount) })
-      .from(salaryPayments)
-      .where(inRange(salaryPayments, hotelId, from, to))
-      .groupBy(salaryPayments.paidVia),
-  ]);
+      .select({ key: table.paidVia, total: sum(table.amount) })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .from(table as any)
+      .where(inRange(table, hotelId, from, to))
+      .groupBy(table.paidVia) as Promise<ModeRow[]>;
+  const [salesByMode, salesByUnit, receiptsByMode, [comm], expByVia, expByCat, advByVia, salByVia, supByVia, drawByVia, transfers] =
+    await Promise.all([
+      db.select({ key: sales.mode, total: sum(sales.amount) }).from(sales).where(inRange(sales, hotelId, from, to)).groupBy(sales.mode),
+      db.select({ key: sales.unit, total: sum(sales.amount) }).from(sales).where(inRange(sales, hotelId, from, to)).groupBy(sales.unit),
+      db.select({ key: receipts.mode, total: sum(receipts.amount) }).from(receipts).where(inRange(receipts, hotelId, from, to)).groupBy(receipts.mode),
+      db.select({ total: sum(receipts.commission) }).from(receipts).where(inRange(receipts, hotelId, from, to)),
+      byMode(expenses),
+      db
+        .select({ id: expenseCategories.id, name: expenseCategories.name, parentId: expenseCategories.parentId, total: sum(expenses.amount) })
+        .from(expenses)
+        .innerJoin(expenseCategories, eq(expenseCategories.id, expenses.categoryId))
+        .where(inRange(expenses, hotelId, from, to))
+        .groupBy(expenseCategories.id, expenseCategories.name, expenseCategories.parentId),
+      byMode(advances),
+      byMode(salaryPayments),
+      byMode(supplierPayments),
+      byMode(partnerDrawings),
+      db
+        .select({ key: cashTransfers.direction, total: sum(cashTransfers.amount) })
+        .from(cashTransfers)
+        .where(inRange(cashTransfers, hotelId, from, to))
+        .groupBy(cashTransfers.direction),
+    ]);
 
+  const commission = comm?.total ?? 0;
   const income = total(salesByMode);
-  const expense = total(expByVia);
-  const cashIn = pick(salesByMode, "cash") + pick(receiptsByMode, "cash");
-  // Salary handed over is money leaving the drawer / bank that day; its cost is counted
-  // against the month it was earned (see monthProfit), not here.
-  const cashOut = pick(expByVia, "cash") + pick(advByVia, "cash") + pick(salByVia, "cash");
-  const nonCash = (rows: ModeRow[]) => total(rows) - pick(rows, "cash");
+  const expense = total(expByVia) + commission;
+  const toBank = pick(transfers, "to_bank");
+  const toCash = pick(transfers, "to_cash");
+  // Paid other than in cash and not left on credit: came out of the bank.
+  const banked = (rows: ModeRow[]) => total(rows) - pick(rows, "cash") - pick(rows, "credit");
+  const outflows = [expByVia, advByVia, salByVia, supByVia, drawByVia];
+  const cashIn = pick(salesByMode, "cash") + pick(receiptsByMode, "cash") + toCash;
+  const cashOut = outflows.reduce((a, rows) => a + pick(rows, "cash"), 0) + toBank;
   const bankIn =
-    pick(salesByMode, "upi") + pick(salesByMode, "card") + pick(salesByMode, "bank") + nonCash(receiptsByMode);
-  const bankOut = nonCash(expByVia) + nonCash(advByVia) + nonCash(salByVia);
+    pick(salesByMode, "upi") + pick(salesByMode, "card") + pick(salesByMode, "bank") + banked(receiptsByMode) + toBank;
+  const bankOut = outflows.reduce((a, rows) => a + banked(rows), 0) + toCash;
   const onCredit = pick(salesByMode, "zomato") + pick(salesByMode, "swiggy") + pick(salesByMode, "credit");
 
   return {
     income,
     expense,
     net: income - expense,
+    commission,
+    creditPurchases: pick(expByVia, "credit"),
     advances: total(advByVia),
     salaryPaid: total(salByVia),
+    supplierPaid: total(supByVia),
+    drawings: total(drawByVia),
+    toBank,
+    toCash,
     receipts: total(receiptsByMode),
     cashIn,
     cashOut,
@@ -70,7 +95,8 @@ export async function rangeTotals(hotelId: number, from: string, to: string, db?
     onCredit,
     salesByMode,
     salesByUnit,
-    expByCat,
+    // Commission shows as its own line in the category breakdown.
+    expByCat: commission ? [...expByCat, { id: -1, name: "Zomato / Swiggy commission", parentId: null, total: commission }] : expByCat,
   };
 }
 
@@ -130,7 +156,7 @@ export async function partyBalances(hotelId: number, db?: DB) {
       phone: parties.phone,
       // Written as plain SQL: drizzle drops table qualifiers inside select-list subqueries.
       billed: sql<number>`coalesce((select sum(s.amount) from sales s where s.party_id = "parties"."id"), 0)::int`,
-      received: sql<number>`coalesce((select sum(r.amount) from receipts r where r.party_id = "parties"."id"), 0)::int`,
+      received: sql<number>`coalesce((select sum(r.amount + r.commission) from receipts r where r.party_id = "parties"."id"), 0)::int`,
     })
     .from(parties)
     .where(and(eq(parties.hotelId, hotelId), eq(parties.active, true)))
@@ -192,23 +218,55 @@ export async function dayRows(hotelId: number, from: string, to: string, db?: DB
           from sales where hotel_id = ${hotelId} and date between ${from} and ${to} group by date),
     e as (select date, sum(amount) as total, sum(amount) filter (where paid_via = 'cash') as cash
           from expenses where hotel_id = ${hotelId} and date between ${from} and ${to} group by date),
-    a as (select date, sum(amount) as total, sum(amount) filter (where paid_via = 'cash') as cash
+    a as (select date, sum(amount) as total
           from advances where hotel_id = ${hotelId} and date between ${from} and ${to} group by date),
-    r as (select date, sum(amount) as total, sum(amount) filter (where mode = 'cash') as cash
+    r as (select date, sum(amount) as total, sum(commission) as commission, sum(amount) filter (where mode = 'cash') as cash
           from receipts where hotel_id = ${hotelId} and date between ${from} and ${to} group by date),
-    sp as (select date, sum(amount) as total, sum(amount) filter (where paid_via = 'cash') as cash
-          from salary_payments where hotel_id = ${hotelId} and date between ${from} and ${to} group by date)
+    sp as (select date, sum(amount) as total
+          from salary_payments where hotel_id = ${hotelId} and date between ${from} and ${to} group by date),
+    -- cash paid out other than expenses: advances, salary, suppliers, partner withdrawals
+    oc as (select date, sum(amount) as cash from (
+            select date, amount from advances where hotel_id = ${hotelId} and paid_via = 'cash' and date between ${from} and ${to}
+            union all select date, amount from salary_payments where hotel_id = ${hotelId} and paid_via = 'cash' and date between ${from} and ${to}
+            union all select date, amount from supplier_payments where hotel_id = ${hotelId} and paid_via = 'cash' and date between ${from} and ${to}
+            union all select date, amount from partner_drawings where hotel_id = ${hotelId} and paid_via = 'cash' and date between ${from} and ${to}
+          ) x group by date),
+    t as (select date, sum(amount) filter (where direction = 'to_bank') as to_bank, sum(amount) filter (where direction = 'to_cash') as to_cash
+          from cash_transfers where hotel_id = ${hotelId} and date between ${from} and ${to} group by date)
     select to_char(days.date, 'YYYY-MM-DD') as date,
       coalesce(s.income, 0)::int as income, coalesce(s.cash, 0)::int as cash, coalesce(s.bank, 0)::int as bank,
-      coalesce(s.credit, 0)::int as credit, coalesce(e.total, 0)::int as expense, coalesce(a.total, 0)::int as advances,
-      coalesce(sp.total, 0)::int as salary, coalesce(r.total, 0)::int as receipts, b.status,
+      coalesce(s.credit, 0)::int as credit, (coalesce(e.total, 0) + coalesce(r.commission, 0))::int as expense,
+      coalesce(a.total, 0)::int as advances, coalesce(sp.total, 0)::int as salary, coalesce(r.total, 0)::int as receipts, b.status,
       case when b.status = 'closed' then (b.counted_cash - (b.opening_cash - b.cash_deposit + coalesce(s.cash, 0)
-        + coalesce(r.cash, 0) - coalesce(e.cash, 0) - coalesce(a.cash, 0) - coalesce(sp.cash, 0)))::int end as diff
+        + coalesce(r.cash, 0) + coalesce(t.to_cash, 0) - coalesce(e.cash, 0) - coalesce(oc.cash, 0) - coalesce(t.to_bank, 0)))::int end as diff
     from days
     left join s on s.date = days.date left join e on e.date = days.date
     left join a on a.date = days.date left join r on r.date = days.date left join sp on sp.date = days.date
+    left join oc on oc.date = days.date left join t on t.date = days.date
     left join day_books b on b.hotel_id = ${hotelId} and b.date = days.date
     order by days.date`);
   const rows = (res as unknown as { rows?: DayRow[] }).rows ?? (res as unknown as DayRow[]);
   return rows.map((r) => ({ ...r, diff: r.diff == null ? null : Number(r.diff) }));
+}
+
+// What each supplier is owed: goods taken on credit minus payments made to them.
+// `bought` also counts purchases paid on the spot, for the full picture.
+export async function supplierBalances(hotelId: number, db?: DB) {
+  db ??= await getDb();
+  const { suppliers } = schema;
+  const rows = await db
+    .select({
+      id: suppliers.id,
+      name: suppliers.name,
+      phone: suppliers.phone,
+      note: suppliers.note,
+      // Plain SQL: drizzle drops table qualifiers inside select-list subqueries.
+      bought: sql<number>`coalesce((select sum(e.amount) from expenses e where e.supplier_id = "suppliers"."id"), 0)::int`,
+      onCredit: sql<number>`coalesce((select sum(e.amount) from expenses e where e.supplier_id = "suppliers"."id" and e.paid_via = 'credit'), 0)::int`,
+      paid: sql<number>`coalesce((select sum(p.amount) from supplier_payments p where p.supplier_id = "suppliers"."id"), 0)::int`,
+    })
+    .from(suppliers)
+    .where(and(eq(suppliers.hotelId, hotelId), eq(suppliers.active, true)))
+    .orderBy(suppliers.name);
+  return rows.map((r) => ({ ...r, due: r.onCredit - r.paid }));
 }

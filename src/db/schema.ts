@@ -32,8 +32,9 @@ export const unitEnum = pgEnum("business_unit", ["restaurant", "rooms", "banquet
 // How a sale was paid. zomato/swiggy/credit create a receivable on a party.
 export const saleModeEnum = pgEnum("sale_mode", ["cash", "upi", "card", "bank", "zomato", "swiggy", "credit"]);
 
-// How money actually moved out (or in, for receipts).
-export const payModeEnum = pgEnum("pay_mode", ["cash", "upi", "card", "bank"]);
+// How money actually moved out (or in, for receipts). "credit" is only used for
+// expenses: goods bought from a supplier now and paid later.
+export const payModeEnum = pgEnum("pay_mode", ["cash", "upi", "card", "bank", "credit"]);
 
 export const payTypeEnum = pgEnum("pay_type", ["monthly", "daily"]);
 
@@ -267,6 +268,8 @@ export const receipts = pgTable(
       .references(() => parties.id),
     mode: payModeEnum("mode").notNull(),
     amount: integer("amount").notNull(), // negative = refund paid back to the party
+    // Kept back by Zomato / Swiggy (commission, tax): settles the dues but is an expense.
+    commission: integer("commission").notNull().default(0),
     note: text("note"),
     bookingId: integer("booking_id").references(() => bookings.id),
     createdBy: integer("created_by")
@@ -275,6 +278,41 @@ export const receipts = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("receipts_hotel_date").on(t.hotelId, t.date)],
+);
+
+// People we buy from (dairy, grocery, gas...). Purchases are expenses with supplier_id;
+// those made on credit stay due until supplier_payments cover them.
+export const suppliers = pgTable("suppliers", {
+  id: serial("id").primaryKey(),
+  hotelId: integer("hotel_id")
+    .notNull()
+    .references(() => hotels.id),
+  name: text("name").notNull(),
+  phone: text("phone"),
+  note: text("note"), // what they supply
+  active: boolean("active").notNull().default(true),
+});
+
+export const supplierPayments = pgTable(
+  "supplier_payments",
+  {
+    id: serial("id").primaryKey(),
+    hotelId: integer("hotel_id")
+      .notNull()
+      .references(() => hotels.id),
+    supplierId: integer("supplier_id")
+      .notNull()
+      .references(() => suppliers.id),
+    date: date("date", { mode: "string" }).notNull(),
+    amount: integer("amount").notNull(),
+    paidVia: payModeEnum("paid_via").notNull(),
+    note: text("note"),
+    createdBy: integer("created_by")
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("supplier_payments_hotel_date").on(t.hotelId, t.date)],
 );
 
 export const expenseCategories = pgTable("expense_categories", {
@@ -305,6 +343,7 @@ export const expenses = pgTable(
     vendor: text("vendor"),
     note: text("note"),
     employeeId: integer("employee_id").references(() => employees.id),
+    supplierId: integer("supplier_id").references(() => suppliers.id),
     createdBy: integer("created_by")
       .notNull()
       .references(() => users.id),
@@ -327,6 +366,9 @@ export const advances = pgTable(
       .references(() => employees.id),
     amount: integer("amount").notNull(),
     paidVia: payModeEnum("paid_via").notNull(),
+    // null: recovered in full from this month's salary. Otherwise a loan recovered
+    // at this much per month, starting with the month it was given.
+    installment: integer("installment"),
     note: text("note"),
     createdBy: integer("created_by")
       .notNull()
@@ -373,6 +415,66 @@ export const partners = pgTable("partners", {
   userId: integer("user_id").references(() => users.id),
   active: boolean("active").notNull().default(true),
 });
+
+// Money a partner takes out of the business against their profit share.
+export const partnerDrawings = pgTable(
+  "partner_drawings",
+  {
+    id: serial("id").primaryKey(),
+    hotelId: integer("hotel_id")
+      .notNull()
+      .references(() => hotels.id),
+    partnerId: integer("partner_id")
+      .notNull()
+      .references(() => partners.id),
+    date: date("date", { mode: "string" }).notNull(),
+    amount: integer("amount").notNull(),
+    paidVia: payModeEnum("paid_via").notNull(),
+    note: text("note"),
+    createdBy: integer("created_by")
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("partner_drawings_hotel_date").on(t.hotelId, t.date)],
+);
+
+// Cash taken to the bank or drawn from it during the day (besides the deposit at close).
+export const cashTransfers = pgTable(
+  "cash_transfers",
+  {
+    id: serial("id").primaryKey(),
+    hotelId: integer("hotel_id")
+      .notNull()
+      .references(() => hotels.id),
+    date: date("date", { mode: "string" }).notNull(),
+    direction: text("direction", { enum: ["to_bank", "to_cash"] }).notNull(),
+    amount: integer("amount").notNull(),
+    note: text("note"),
+    createdBy: integer("created_by")
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("cash_transfers_hotel_date").on(t.hotelId, t.date)],
+);
+
+// Salary / wage rate from a date onwards, so a raise does not rewrite past months.
+export const employeeRates = pgTable(
+  "employee_rates",
+  {
+    id: serial("id").primaryKey(),
+    hotelId: integer("hotel_id")
+      .notNull()
+      .references(() => hotels.id),
+    employeeId: integer("employee_id")
+      .notNull()
+      .references(() => employees.id),
+    fromDate: date("from_date", { mode: "string" }).notNull(),
+    rate: integer("rate").notNull(),
+  },
+  (t) => [uniqueIndex("employee_rates_emp_from").on(t.employeeId, t.fromDate)],
+);
 
 export const auditLog = pgTable("audit_log", {
   id: serial("id").primaryKey(),

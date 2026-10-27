@@ -19,6 +19,7 @@ export function EmployeeForm({ employee, managers, nextCode }: { employee?: Empl
         <Select name="payType" label="Pay type" defaultValue={e?.payType ?? "monthly"} options={[{ value: "monthly", label: "Monthly salary" }, { value: "daily", label: "Daily wage" }]} />
         <Input name="rate" label="Salary per month / wage per day (₹)" defaultValue={e ? rupeesPlain(e.rate) : ""} inputMode="decimal" required />
         <Input name="joinDate" label="Join date" type="date" defaultValue={e?.joinDate ?? todayIST()} required />
+        {e && <Input name="rateFrom" label="If salary changed: applies from" type="date" defaultValue={todayIST()} />}
         <Select name="managerUserId" label="Reports to (manager)" defaultValue={e?.managerUserId ?? ""} options={managers} placeholder="No manager" />
         {e && <Select name="active" label="Status" defaultValue={e.active ? "on" : "off"} options={[{ value: "on", label: "Working" }, { value: "off", label: "Left / inactive" }]} />}
       </div>

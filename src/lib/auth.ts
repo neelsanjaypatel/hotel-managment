@@ -3,7 +3,7 @@ import { cache } from "react";
 import { createHash, randomBytes } from "node:crypto";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { and, eq, gt, lt } from "drizzle-orm";
+import { and, eq, gt, lt, ne } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { getDb, schema } from "@/db";
 import type { Hotel, Role } from "@/db/schema";
@@ -173,4 +173,17 @@ export async function requirePlatformAction(): Promise<CurrentUser> {
 
 export function hashPassword(pw: string) {
   return bcrypt.hash(pw, 10);
+}
+
+export function verifyPassword(pw: string, passwordHash: string) {
+  return bcrypt.compare(pw, passwordHash);
+}
+
+// Sign the user out everywhere except the browser making this request.
+export async function keepOnlyThisSession(userId: number) {
+  const token = (await cookies()).get(COOKIE)?.value;
+  const db = await getDb();
+  await db
+    .delete(schema.sessions)
+    .where(and(eq(schema.sessions.userId, userId), token ? ne(schema.sessions.id, hash(token)) : undefined));
 }

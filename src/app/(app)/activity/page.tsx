@@ -23,6 +23,9 @@ const ENTITY: Record<string, string> = {
   partner: "partner",
   booking: "booking",
   hotel: "hotel account",
+  supplier: "supplier",
+  drawing: "partner withdrawal",
+  transfer: "cash ↔ bank",
 };
 
 const ACTION: Record<string, { label: string; tone: "ok" | "warn" | "out" | "neutral" }> = {
@@ -45,6 +48,7 @@ const ACTION: Record<string, { label: string; tone: "ok" | "warn" | "out" | "neu
   extend_trial: { label: "Trial extended", tone: "neutral" },
   suspend: { label: "Suspended", tone: "out" },
   resume: { label: "Resumed", tone: "ok" },
+  change_password: { label: "Changed own password", tone: "neutral" },
 };
 
 type Data = Record<string, unknown> | null;

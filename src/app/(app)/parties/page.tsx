@@ -57,7 +57,7 @@ export default async function PartiesPage() {
             <ul className="num space-y-1.5 text-sm">
               {recent.map(({ r, party }) => (
                 <li key={r.id} className="flex justify-between gap-3">
-                  <span>{r.date.slice(8)}/{r.date.slice(5, 7)} · {party} <span className="text-muted">· {PAY_MODE_LABEL[r.mode]}</span></span>
+                  <span>{r.date.slice(8)}/{r.date.slice(5, 7)} · {party} <span className="text-muted">· {PAY_MODE_LABEL[r.mode]}{r.commission ? ` + ${rupees(r.commission)} commission` : ""}</span></span>
                   <span>{rupees(r.amount)}</span>
                 </li>
               ))}
