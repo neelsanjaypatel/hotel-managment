@@ -7,7 +7,7 @@ payroll, dues and partner reports.
 
 Stack: Next.js 16 (App Router, server actions) + Drizzle ORM + Postgres.
 Locally the database is embedded Postgres (PGlite, in `.data/`), so nothing
-needs installing. In the cloud it is Supabase Postgres (Mumbai region).
+needs installing. In the cloud it is any Postgres (Railway or Supabase).
 
 ## How hotels come on board
 
@@ -166,26 +166,36 @@ close and reopen is written to `audit_log`.
   Overtime = one day's pay / 8 per hour. Advances and daily wages already paid
   from the counter (Labour Wages category, linked to the worker) are deducted.
 
-## Deploy (Supabase + Vercel)
+## Deploy (Railway)
 
-1. **Supabase**: create a project in region `ap-south-1` (Mumbai). From
-   Project Settings > Database copy the **Transaction pooler** connection
-   string (port 6543).
-2. **First setup, from this machine**:
-   `DATABASE_URL="postgres://..." npm run seed` creates all tables, the plans
-   and the `platform` login. The password is written to `.data/logins.txt`;
-   log in once and change it from My account.
-3. **GitHub**: push this repo (Vercel deploys from it).
-4. **Vercel**: import the repo, set environment variables `DATABASE_URL`
-   (same pooler string) and `PLATFORM_PAYMENT_NOTE` (your UPI ID / bank / WhatsApp
-   for renewals), deploy. `npm run build` applies any new migrations before
-   building, so each deploy updates the database once.
-5. Open the site on a phone and "Add to Home screen" to install it.
+The repo is ready to deploy as is: `railway.json` sets the build (`npm run build`),
+the start (`npm start`, which applies database migrations and then starts the
+server on Railway's `PORT`) and a health check on `/login`.
+
+1. **New project**: on railway.com choose *New Project > Deploy from GitHub repo*
+   and pick this repository.
+2. **Database**: in the same project click *+ Create > Database > PostgreSQL*.
+3. **Connect them**: open the app service > *Variables* and add
+   - `DATABASE_URL` = `${{Postgres.DATABASE_URL}}` (a reference to the database
+     above, so no password is copied by hand)
+   - `PLATFORM_PAYMENT_NOTE` = your UPI ID / bank / WhatsApp for renewals.
+4. **Public address**: app service > *Settings > Networking > Generate Domain*.
+   The first deploy creates all tables by itself.
+5. **First login**: from this machine, with the database's *public* URL
+   (Postgres service > *Variables* > `DATABASE_PUBLIC_URL`):
+   `DATABASE_URL="postgres://..." npm run seed` adds the plans and the
+   `platform` login. The password is written to `.data/logins.txt`; log in
+   once and change it from My account.
+6. Open the site on a phone and "Add to Home screen" to install it.
+
+The app refuses to run in production without `DATABASE_URL`: a container's disk
+is wiped on each deploy, so the local PGlite database cannot be used there.
 
 Schema changes: edit `src/db/schema.ts`, run `npm run db:generate`. Locally the
-dev server applies migrations to PGlite on start; in production `npm run build`
-(or `npm run db:migrate`) applies them to `DATABASE_URL`. Set
-`MIGRATE_ON_START=1` only if you deploy without running the build script.
+dev server applies migrations to PGlite on start; in production `npm start`
+(or `npm run db:migrate`) applies them to `DATABASE_URL` before the server
+starts. Any Postgres works the same way (Supabase: use the Transaction pooler
+string, port 6543).
 
 ## Not built yet (next phases)
 

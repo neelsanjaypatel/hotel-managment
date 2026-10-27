@@ -2,14 +2,17 @@
   "name": "hotel-manager",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=20.9"
+  },
   "scripts": {
     "dev": "next dev -p 3420",
-    "build": "tsx scripts/migrate.ts && next build",
-    "start": "next start -p 3420",
+    "build": "next build",
+    "start": "node scripts/migrate.mjs && next start",
     "lint": "eslint",
     "seed": "tsx scripts/seed.ts",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "tsx scripts/migrate.ts"
+    "db:migrate": "node scripts/migrate.mjs"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.11",

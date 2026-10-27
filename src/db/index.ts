@@ -17,9 +17,14 @@ function create() {
   if (url) {
     const client = postgres(url, { prepare: false });
     const db = drizzlePg(client, { schema });
-    // Production migrates once per deploy (npm run build -> scripts/migrate.ts). Running it
-    // on every start would let several serverless instances race on the same migration.
+    // Production migrates once per deploy (npm start -> scripts/migrate.mjs, before the
+    // server listens). Running it here too would let several instances race on one migration.
     return { db, ready: process.env.MIGRATE_ON_START === "1" ? migratePg(db, { migrationsFolder }) : Promise.resolve() };
+  }
+  // A hosted container's disk is wiped on every deploy; PGlite there would silently lose
+  // every entry. Refuse to start instead of pretending to save.
+  if (process.env.NODE_ENV === "production" && process.env.ALLOW_PGLITE !== "1") {
+    throw new Error("DATABASE_URL is not set. Add the Postgres connection string to the server's environment variables.");
   }
   const dir = path.join(process.cwd(), ".data", "pglite");
   // PGlite does not create parent folders; a fresh checkout has no .data yet.
