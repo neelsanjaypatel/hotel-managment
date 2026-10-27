@@ -4,11 +4,12 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3420",
-    "build": "next build",
+    "build": "tsx scripts/migrate.ts && next build",
     "start": "next start -p 3420",
     "lint": "eslint",
     "seed": "tsx scripts/seed.ts",
-    "db:generate": "drizzle-kit generate"
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "tsx scripts/migrate.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.11",

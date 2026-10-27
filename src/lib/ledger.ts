@@ -264,9 +264,11 @@ export async function supplierBalances(hotelId: number, db?: DB) {
       bought: sql<number>`coalesce((select sum(e.amount) from expenses e where e.supplier_id = "suppliers"."id"), 0)::int`,
       onCredit: sql<number>`coalesce((select sum(e.amount) from expenses e where e.supplier_id = "suppliers"."id" and e.paid_via = 'credit'), 0)::int`,
       paid: sql<number>`coalesce((select sum(p.amount) from supplier_payments p where p.supplier_id = "suppliers"."id"), 0)::int`,
+      active: suppliers.active,
     })
     .from(suppliers)
-    .where(and(eq(suppliers.hotelId, hotelId), eq(suppliers.active, true)))
+    .where(eq(suppliers.hotelId, hotelId))
     .orderBy(suppliers.name);
-  return rows.map((r) => ({ ...r, due: r.onCredit - r.paid }));
+  // A stopped supplier still shows while money is owed either way.
+  return rows.map((r) => ({ ...r, due: r.onCredit - r.paid })).filter((r) => r.active || r.due !== 0);
 }

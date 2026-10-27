@@ -421,6 +421,12 @@ export async function saveEmployee(_: FormState, fd: FormData): Promise<FormStat
         await db.transaction(async (tx) => {
           await tx.update(schema.employees).set(values).where(and(eq(schema.employees.id, id), eq(schema.employees.hotelId, user.hotelId)));
           if (rateChanged) {
+            // Employees saved before salary history existed have no rows yet: record the
+            // old rate from the join date first so earlier months keep it.
+            await tx
+              .insert(schema.employeeRates)
+              .values({ hotelId: user.hotelId, employeeId: id, fromDate: existing!.joinDate as string, rate: existing!.rate as number })
+              .onConflictDoNothing();
             await tx
               .insert(schema.employeeRates)
               .values({ hotelId: user.hotelId, employeeId: id, fromDate: rateFrom as string, rate })

@@ -1,4 +1,5 @@
 import "server-only";
+import fs from "node:fs";
 import path from "node:path";
 import { drizzle as drizzlePglite } from "drizzle-orm/pglite";
 import { migrate as migratePglite } from "drizzle-orm/pglite/migrator";
@@ -16,9 +17,14 @@ function create() {
   if (url) {
     const client = postgres(url, { prepare: false });
     const db = drizzlePg(client, { schema });
-    return { db, ready: migratePg(db, { migrationsFolder }) };
+    // Production migrates once per deploy (npm run build -> scripts/migrate.ts). Running it
+    // on every start would let several serverless instances race on the same migration.
+    return { db, ready: process.env.MIGRATE_ON_START === "1" ? migratePg(db, { migrationsFolder }) : Promise.resolve() };
   }
-  const client = new PGlite(path.join(process.cwd(), ".data", "pglite"));
+  const dir = path.join(process.cwd(), ".data", "pglite");
+  // PGlite does not create parent folders; a fresh checkout has no .data yet.
+  fs.mkdirSync(path.dirname(dir), { recursive: true });
+  const client = new PGlite(dir);
   // PGlite keeps the database in memory and flushes on close; a hard kill leaves the
   // folder unreadable. Close it cleanly when the dev server is stopped.
   for (const sig of ["SIGINT", "SIGTERM"] as const) {

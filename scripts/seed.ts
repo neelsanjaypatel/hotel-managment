@@ -26,7 +26,10 @@ async function connect() {
     await migratePg(db, { migrationsFolder });
     return { db, close: () => client.end() };
   }
-  const client = new PGlite(path.join(process.cwd(), ".data", "pglite"));
+  const dir = path.join(process.cwd(), ".data", "pglite");
+  // PGlite does not create parent folders; a fresh checkout has no .data yet.
+  fs.mkdirSync(path.dirname(dir), { recursive: true });
+  const client = new PGlite(dir);
   const db = drizzlePglite(client, { schema: s });
   await migratePglite(db, { migrationsFolder });
   return { db, close: () => client.close() };
@@ -251,6 +254,11 @@ async function main() {
     ]);
     await db.insert(s.sales).values({ hotelId: second.hotel.id, date: addDays(today0, -1), unit: "rooms", mode: "upi", amount: rupees(4200), createdBy: second.owner.id });
     logins.push(`sagar / demo1234  (Sagar Residency owner, on trial)`);
+
+    // Every employee starts its salary history at the join date (the app does this on add).
+    await db.execute(sql`insert into employee_rates (hotel_id, employee_id, from_date, rate)
+      select e.hotel_id, e.id, e.join_date, e.rate from employees e
+      where not exists (select 1 from employee_rates r where r.employee_id = e.id)`);
   }
 
   finish(logins);

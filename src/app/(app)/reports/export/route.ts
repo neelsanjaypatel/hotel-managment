@@ -12,9 +12,9 @@ export async function GET(req: Request) {
   const { from, to } = monthBounds(month);
   const rows = await dayRows(user.hotelId, from, to);
   const lines = [
-    "Date,Income,Cash,Bank/UPI/Card,Zomato/Swiggy/Credit,Expense,Net,Advances,Payments received,Cash difference,Day status",
+    "Date,Income,Cash,Bank/UPI/Card,Zomato/Swiggy/Credit,Expense,Net,Advances,Salary paid,Payments received,Cash difference,Day status",
     ...rows.map((x) =>
-      [x.date, r(x.income), r(x.cash), r(x.bank), r(x.credit), r(x.expense), r(x.income - x.expense), r(x.advances), r(x.receipts), x.diff == null ? "" : r(x.diff), x.status ?? ""].join(","),
+      [x.date, r(x.income), r(x.cash), r(x.bank), r(x.credit), r(x.expense), r(x.income - x.expense), r(x.advances), r(x.salary), r(x.receipts), x.diff == null ? "" : r(x.diff), x.status ?? ""].join(","),
     ),
   ];
   return new Response(lines.join("\n") + "\n", {

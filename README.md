@@ -163,16 +163,24 @@ close and reopen is written to `audit_log`.
 
 ## Deploy (Supabase + Vercel)
 
-1. Create a Supabase project in region `ap-south-1` (Mumbai). Copy the
-   **Transaction pooler** connection string.
-2. `DATABASE_URL="postgres://..." npm run seed` once. It runs migrations and
-   creates the plans and the `platform` login; the password is in
-   `.data/logins.txt` on your machine.
-3. Import the repo on Vercel, set `DATABASE_URL` and `PLATFORM_PAYMENT_NOTE`
-   (your UPI ID / bank details / WhatsApp number for renewals), deploy.
+1. **Supabase**: create a project in region `ap-south-1` (Mumbai). From
+   Project Settings > Database copy the **Transaction pooler** connection
+   string (port 6543).
+2. **First setup, from this machine**:
+   `DATABASE_URL="postgres://..." npm run seed` creates all tables, the plans
+   and the `platform` login. The password is written to `.data/logins.txt`;
+   log in once and change it from My account.
+3. **GitHub**: push this repo (Vercel deploys from it).
+4. **Vercel**: import the repo, set environment variables `DATABASE_URL`
+   (same pooler string) and `PLATFORM_PAYMENT_NOTE` (your UPI ID / bank / WhatsApp
+   for renewals), deploy. `npm run build` applies any new migrations before
+   building, so each deploy updates the database once.
+5. Open the site on a phone and "Add to Home screen" to install it.
 
-Schema changes: edit `src/db/schema.ts`, run `npm run db:generate`; migrations
-in `drizzle/` apply automatically on server start.
+Schema changes: edit `src/db/schema.ts`, run `npm run db:generate`. Locally the
+dev server applies migrations to PGlite on start; in production `npm run build`
+(or `npm run db:migrate`) applies them to `DATABASE_URL`. Set
+`MIGRATE_ON_START=1` only if you deploy without running the build script.
 
 ## Not built yet (next phases)
 
