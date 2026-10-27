@@ -12,7 +12,8 @@
     "lint": "eslint",
     "seed": "tsx scripts/seed.ts",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "node scripts/migrate.mjs"
+    "db:migrate": "node scripts/migrate.mjs",
+    "copy-to-cloud": "tsx scripts/copy-to-cloud.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.11",
