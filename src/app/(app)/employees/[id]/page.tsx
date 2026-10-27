@@ -40,7 +40,7 @@ export default async function EmployeePage({ params, searchParams }: PageProps<"
         <PeriodPicker name="month" type="month" value={month} max={todayIST().slice(0, 7)} />
       </PageHeader>
       {can(user, "viewPayroll") ? (
-        <SalaryView hotelId={user.hotelId} employeeId={e.id} month={month} />
+        <SalaryView hotelId={user.hotelId} employeeId={e.id} month={month} canEdit={can(user, "manageMaster") && user.access.canWrite && month <= todayIST().slice(0, 7)} />
       ) : (
         <p className="text-sm text-muted">Salary details are visible to admin and partners only.</p>
       )}

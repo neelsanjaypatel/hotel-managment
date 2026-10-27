@@ -29,6 +29,13 @@
       "when": 1793119534187,
       "tag": "0003_suppliers_loans_transfers",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793122186236,
+      "tag": "0004_salary_adjustments",
+      "breakpoints": true
     }
   ]
 }

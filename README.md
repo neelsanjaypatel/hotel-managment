@@ -80,6 +80,11 @@ the dev server normally; a hard kill can leave the local database unreadable.
   salary. Payroll, payslips and the summary show what is left.
 - **Salary history**: changing a salary asks from which date it applies;
   earlier months keep the old rate. Employee page lists the history.
+- **Bonus, allowance, deduction**: the owner adds any of these to one
+  employee's pay for a month (from Payroll "+ Adjust" or the employee page),
+  with a reason that prints on the payslip. Bonus and allowance add to pay and
+  to staff cost; deductions take off. They change what is owed, not cash: the
+  money moves when salary is paid.
 - **Partner withdrawals**: money a partner takes out is recorded on the
   Partners page (cash / bank from today's counter, not an expense). The page
   shows each partner's year share, what they took, and what is still theirs.

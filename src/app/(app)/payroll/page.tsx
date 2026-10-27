@@ -3,6 +3,7 @@ import { requirePage, can } from "@/lib/auth";
 import { monthPayroll } from "@/lib/payroll";
 import { monthBounds, prettyMonth, rupees, rupeesPlain, todayIST, isMonth, PAY_MODE_LABEL } from "@/lib/format";
 import { payAllSalaries, paySalary } from "@/lib/salary-actions";
+import { AdjustmentForm } from "@/components/adjustment-form";
 import { Card, PageHeader, Stat } from "@/components/ui";
 import { ActionForm, Input, PeriodPicker, Select } from "@/components/forms";
 
@@ -55,7 +56,7 @@ export default async function PayrollPage({ searchParams }: PageProps<"/payroll"
             <thead>
               <tr>
                 <th>Employee</th><th>Type</th><th className="r">P</th><th className="r">A</th><th className="r">Half</th><th className="r">Leave+WO</th><th className="r">OT h</th>
-                <th className="r">Paid days</th><th className="r">Earned</th><th className="r">Advance</th><th className="r">Wages paid</th><th className="r">Salary paid</th><th className="r">Balance</th><th />
+                <th className="r">Paid days</th><th className="r">+ Bonus / allow.</th><th className="r">− Deduction</th><th className="r">Earned</th><th className="r">Advance</th><th className="r">Wages paid</th><th className="r">Salary paid</th><th className="r">Balance</th><th />
               </tr>
             </thead>
             <tbody>
@@ -72,6 +73,8 @@ export default async function PayrollPage({ searchParams }: PageProps<"/payroll"
                   <td className="r num">{r.counts.L + r.counts.WO || ""}</td>
                   <td className="r num">{r.ot || ""}</td>
                   <td className="r num">{r.paidDays}</td>
+                  <td className="r num text-income">{r.bonus + r.allowance ? rupees(r.bonus + r.allowance) : ""}</td>
+                  <td className="r num text-expense">{r.deduction ? rupees(r.deduction) : ""}</td>
                   <td className="r num">{rupees(r.earned)}</td>
                   <td className="r num text-warn">{r.advance ? rupees(r.advance) : ""}</td>
                   <td className="r num">{r.wagesPaid ? rupees(r.wagesPaid) : ""}</td>
@@ -80,6 +83,14 @@ export default async function PayrollPage({ searchParams }: PageProps<"/payroll"
                   <td className="r whitespace-nowrap">
                     <span className="inline-flex items-start gap-3">
                       <Link href={`/payslip/${r.employee.id}?month=${month}`} className="text-xs text-accent">Payslip</Link>
+                      {canPay && (
+                        <details className="text-left">
+                          <summary className="cursor-pointer text-xs text-muted">+ Adjust</summary>
+                          <div className="mt-2 w-60">
+                            <AdjustmentForm employeeId={r.employee.id} month={month} />
+                          </div>
+                        </details>
+                      )}
                       {canPay && r.net > 0 && (
                         <details className="text-left">
                           <summary className="cursor-pointer text-xs font-semibold text-accent">Pay</summary>
@@ -105,7 +116,7 @@ export default async function PayrollPage({ searchParams }: PageProps<"/payroll"
       </Card>
       <p className="mt-3 text-xs text-muted">
         Monthly staff: salary ÷ days in month × (present + leave + week off + half days ÷ 2). Daily staff: wage × (present + half days ÷ 2).
-        Overtime: one day&apos;s pay ÷ 8 per hour. Advances, daily wages already paid from the counter and salary already paid for this month are deducted.
+        Overtime: one day&apos;s pay ÷ 8 per hour. Bonus and allowance are added, deductions taken off. Advances, daily wages already paid from the counter and salary already paid for this month are deducted.
       </p>
     </>
   );

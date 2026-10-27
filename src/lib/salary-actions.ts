@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb, schema } from "@/db";
 import { requireAction } from "./auth";
@@ -66,5 +67,43 @@ export async function payAllSalaries(_: FormState, fd: FormData): Promise<FormSt
     await audit(user, "pay_all_salaries", "salary", month, { count: rows.length, total, paidVia });
     revalidatePath("/", "layout");
     return ok(`Paid ${rupees(total)} to ${rows.length} employees for ${prettyMonth(month)}.`);
+  });
+}
+
+const KIND_LABEL = { bonus: "Bonus", allowance: "Allowance", deduction: "Deduction" } as const;
+
+// Bonus / allowance (added to pay) or deduction (taken off pay) for one employee and month.
+// It changes what is owed, not money in the drawer: the money moves when salary is paid.
+export async function addAdjustment(_: FormState, fd: FormData): Promise<FormState> {
+  return run(async () => {
+    const user = await requireAction("manageMaster");
+    const month = salaryMonth(fd);
+    const employeeId = Number(fd.get("employeeId"));
+    const emp = await owned(schema.employees, employeeId, user.hotelId, "employee");
+    const kind = z.enum(["bonus", "allowance", "deduction"]).safeParse(fd.get("kind"));
+    if (!kind.success) throw new UserError("Choose bonus, allowance or deduction.");
+    const note = str(fd, "note");
+    if (!note) throw new UserError("Write the reason (it is shown on the payslip).");
+    const db = await getDb();
+    const [row] = await db
+      .insert(schema.salaryAdjustments)
+      .values({ hotelId: user.hotelId, employeeId, month, kind: kind.data, amount: amount(fd), note, createdBy: user.id })
+      .returning();
+    await audit(user, "create", "adjustment", row.id, row);
+    revalidatePath("/", "layout");
+    return ok(`${KIND_LABEL[kind.data]} of ${rupees(row.amount)} added for ${emp.name}.`);
+  });
+}
+
+export async function deleteAdjustment(id: number): Promise<FormState> {
+  return run(async () => {
+    const user = await requireAction("manageMaster");
+    if (!Number.isInteger(id)) throw new UserError("Entry not found.");
+    const row = await owned(schema.salaryAdjustments, id, user.hotelId, "entry");
+    const db = await getDb();
+    await db.delete(schema.salaryAdjustments).where(and(eq(schema.salaryAdjustments.id, id), eq(schema.salaryAdjustments.hotelId, user.hotelId)));
+    await audit(user, "delete", "adjustment", id, row);
+    revalidatePath("/", "layout");
+    return ok("Removed.");
   });
 }

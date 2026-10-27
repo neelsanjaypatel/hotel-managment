@@ -36,7 +36,7 @@ export async function GET() {
   };
   const emp = name(emps), party = name(parties), cat = name(cats), sup = name(suppliers), partner = name(partners), who = name(users);
 
-  const [sales, expenses, advances, receipts, salary, supPay, drawings, transfers, attendance, days, bookings, rates] = await Promise.all([
+  const [sales, expenses, advances, receipts, salary, supPay, drawings, transfers, attendance, days, bookings, rates, adjustments] = await Promise.all([
     db.select().from(s.sales).where(eq(s.sales.hotelId, h)).orderBy(asc(s.sales.date), asc(s.sales.id)),
     db.select().from(s.expenses).where(eq(s.expenses.hotelId, h)).orderBy(asc(s.expenses.date), asc(s.expenses.id)),
     db.select().from(s.advances).where(eq(s.advances.hotelId, h)).orderBy(asc(s.advances.date)),
@@ -49,6 +49,7 @@ export async function GET() {
     db.select().from(s.dayBooks).where(eq(s.dayBooks.hotelId, h)).orderBy(asc(s.dayBooks.date)),
     db.select().from(s.bookings).where(eq(s.bookings.hotelId, h)).orderBy(asc(s.bookings.date)),
     db.select().from(s.employeeRates).where(eq(s.employeeRates.hotelId, h)).orderBy(asc(s.employeeRates.fromDate)),
+    db.select().from(s.salaryAdjustments).where(eq(s.salaryAdjustments.hotelId, h)).orderBy(asc(s.salaryAdjustments.month)),
   ]);
 
   const wb = new ExcelJS.Workbook();
@@ -58,6 +59,7 @@ export async function GET() {
   addSheet(wb, "Payments received", receipts, [["Date", (r) => r.date], ["From", (r) => party(r.partyId)], ["Mode", (r) => r.mode], ["Amount", (r) => r.amount, true], ["Commission", (r) => r.commission, true], ["Note", (r) => r.note], ["By", (r) => who(r.createdBy)]]);
   addSheet(wb, "Advances & loans", advances, [["Date", (r) => r.date], ["Employee", (r) => emp(r.employeeId)], ["Amount", (r) => r.amount, true], ["Monthly installment", (r) => r.installment, true], ["Paid by", (r) => r.paidVia], ["Note", (r) => r.note]]);
   addSheet(wb, "Salary paid", salary, [["Date", (r) => r.date], ["For month", (r) => r.month], ["Employee", (r) => emp(r.employeeId)], ["Amount", (r) => r.amount, true], ["Paid by", (r) => r.paidVia], ["Note", (r) => r.note]]);
+  addSheet(wb, "Bonus, allowance, deduction", adjustments, [["Month", (r) => r.month], ["Employee", (r) => emp(r.employeeId)], ["Type", (r) => r.kind], ["Amount", (r) => r.amount, true], ["Reason", (r) => r.note], ["By", (r) => who(r.createdBy)]]);
   addSheet(wb, "Supplier payments", supPay, [["Date", (r) => r.date], ["Supplier", (r) => sup(r.supplierId)], ["Amount", (r) => r.amount, true], ["Paid by", (r) => r.paidVia], ["Note", (r) => r.note]]);
   addSheet(wb, "Partner withdrawals", drawings, [["Date", (r) => r.date], ["Partner", (r) => partner(r.partnerId)], ["Amount", (r) => r.amount, true], ["Paid by", (r) => r.paidVia], ["Note", (r) => r.note]]);
   addSheet(wb, "Cash-bank transfers", transfers, [["Date", (r) => r.date], ["Direction", (r) => (r.direction === "to_bank" ? "Cash to bank" : "Bank to cash")], ["Amount", (r) => r.amount, true], ["Note", (r) => r.note]]);

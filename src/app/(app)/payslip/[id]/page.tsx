@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Fragment } from "react";
 import { notFound } from "next/navigation";
 import { and, asc, eq } from "drizzle-orm";
 import { requirePage, can } from "@/lib/auth";
@@ -56,7 +57,13 @@ export default async function PayslipPage({ params, searchParams }: PageProps<"/
         <dl className="num grid grid-cols-[1fr_auto] gap-y-1.5 border-t border-line pt-4 text-sm">
           <dt>Basic earned</dt><dd className="text-right">{rupees(row.basic)}</dd>
           <dt>Overtime</dt><dd className="text-right">{rupees(row.otPay)}</dd>
-          <dt className="font-semibold">Gross earned</dt><dd className="text-right font-semibold">{rupees(row.earned)}</dd>
+          {row.adjustments.map((x) => (
+            <Fragment key={x.id}>
+              <dt>{x.kind === "deduction" ? "Less " : ""}{x.kind === "bonus" ? "Bonus" : x.kind === "allowance" ? "Allowance" : "deduction"} · {x.note}</dt>
+              <dd className="text-right">{x.kind === "deduction" ? "-" : ""}{rupees(x.amount)}</dd>
+            </Fragment>
+          ))}
+          <dt className="font-semibold">{row.adjustments.length ? "Gross pay" : "Gross earned"}</dt><dd className="text-right font-semibold">{rupees(row.earned)}</dd>
           <dt className="text-muted">Less advance{row.loanDue ? ` (loan installment ${rupees(row.loanDue)})` : ""}</dt><dd className="text-right">{rupees(row.advance)}</dd>
           {row.wagesPaid > 0 && <><dt className="text-muted">Less daily wages paid</dt><dd className="text-right">{rupees(row.wagesPaid)}</dd></>}
           <dt className="text-muted">Less salary paid</dt><dd className="text-right">{rupees(row.salaryPaid)}</dd>

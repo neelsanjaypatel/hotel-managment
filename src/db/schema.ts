@@ -403,6 +403,29 @@ export const salaryPayments = pgTable(
   (t) => [index("salary_payments_hotel_date").on(t.hotelId, t.date), index("salary_payments_hotel_month").on(t.hotelId, t.month)],
 );
 
+// One-off bonus / allowance (added to pay) or deduction (taken off pay) for a month.
+export const salaryAdjustments = pgTable(
+  "salary_adjustments",
+  {
+    id: serial("id").primaryKey(),
+    hotelId: integer("hotel_id")
+      .notNull()
+      .references(() => hotels.id),
+    employeeId: integer("employee_id")
+      .notNull()
+      .references(() => employees.id),
+    month: text("month").notNull(), // YYYY-MM
+    kind: text("kind", { enum: ["bonus", "allowance", "deduction"] }).notNull(),
+    amount: integer("amount").notNull(), // always positive; kind decides the sign
+    note: text("note").notNull(), // reason, shown on the payslip
+    createdBy: integer("created_by")
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("salary_adjustments_hotel_month").on(t.hotelId, t.month)],
+);
+
 // Owners of the hotel and their share of profit. A partner may also have a login (user_id).
 export const partners = pgTable("partners", {
   id: serial("id").primaryKey(),

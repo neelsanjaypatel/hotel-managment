@@ -26,6 +26,7 @@ const ENTITY: Record<string, string> = {
   supplier: "supplier",
   drawing: "partner withdrawal",
   transfer: "cash ↔ bank",
+  adjustment: "bonus / allowance / deduction",
 };
 
 const ACTION: Record<string, { label: string; tone: "ok" | "warn" | "out" | "neutral" }> = {
