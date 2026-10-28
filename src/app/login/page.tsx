@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getUser } from "@/lib/auth";
+import { InstallApp } from "@/components/install-app";
 import { LoginForm } from "./login-form";
 
 export const metadata = { title: "Log in" };
@@ -19,6 +20,7 @@ export default async function LoginPage() {
         <p className="mt-4 text-center text-sm text-muted">
           New hotel? <Link href="/signup" className="font-medium text-accent">Start a free trial</Link>
         </p>
+        <InstallApp className="mt-6" />
       </div>
     </main>
   );

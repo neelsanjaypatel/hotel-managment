@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getUser, can } from "@/lib/auth";
 import { logoutAction } from "@/lib/actions";
 import { NavLinks, type NavItem } from "@/components/nav";
+import { InstallApp } from "@/components/install-app";
 import type { Access } from "@/lib/subscription";
 
 const ROLE_LABEL = {
@@ -89,6 +90,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
           </form>
         </div>
         <NavLinks items={items} />
+        <InstallApp className="px-4 pb-3 md:px-5 md:pt-6 md:pb-0" />
         <form action={logoutAction} className="hidden px-5 pt-6 md:block">
           <button className="text-sm text-muted hover:text-ink">Log out</button>
         </form>

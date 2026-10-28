@@ -8,6 +8,8 @@ const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"]
 export const metadata: Metadata = {
   title: { default: "Hotel Desk", template: "%s · Hotel Desk" },
   description: "Daily counter, expenses, payroll and partner reports for the hotel.",
+  // Opened from the iPhone home screen: full screen, no Safari bars.
+  appleWebApp: { capable: true, title: "Hotel Desk", statusBarStyle: "default" },
 };
 
 export const viewport: Viewport = { themeColor: "#1e6b4e" };
