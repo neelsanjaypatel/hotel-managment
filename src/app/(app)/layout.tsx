@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getUser, can } from "@/lib/auth";
+import { googleConfigured } from "@/lib/google";
 import { logoutAction } from "@/lib/actions";
 import { NavLinks, type NavItem } from "@/components/nav";
 import { InstallApp } from "@/components/install-app";
@@ -97,6 +98,11 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
       </aside>
       <div className="min-w-0">
         {user.access && <SubscriptionBanner access={user.access} isAdmin={user.role === "admin"} />}
+        {user.role === "admin" && !user.hasGoogle && googleConfigured() && (
+          <div className="border-b border-line bg-surface px-4 py-2 text-sm print:hidden md:px-8">
+            Log in faster and safer: <Link href="/account" className="font-medium text-accent">connect your Google account</Link>
+          </div>
+        )}
         <main className="mx-auto w-full max-w-6xl px-4 py-6 md:px-8 md:py-8">{children}</main>
       </div>
     </div>

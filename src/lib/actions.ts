@@ -16,8 +16,9 @@ export type { FormState } from "./action-helpers";
 
 export async function loginAction(_: FormState, fd: FormData): Promise<FormState> {
   const loginId = String(fd.get("login") ?? "");
-  const ok = await login(loginId, String(fd.get("password") ?? ""));
-  if (!ok) return fail(loginLocked(loginId) ? "Too many wrong tries. Please wait 15 minutes." : "Wrong login or password.");
+  const result = await login(loginId, String(fd.get("password") ?? ""));
+  if (result === "google") return fail("This owner login uses Google. Tap Continue with Google above.");
+  if (result === "wrong") return fail(loginLocked(loginId) ? "Too many wrong tries. Please wait 15 minutes." : "Wrong login or password.");
   redirect("/");
 }
 

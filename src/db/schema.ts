@@ -112,6 +112,9 @@ export const users = pgTable("users", {
   name: text("name").notNull(),
   login: text("login").notNull().unique(), // phone number or username, unique across all hotels
   passwordHash: text("password_hash").notNull(),
+  // Owners who connected Google log in with it instead of a password.
+  googleSub: text("google_sub").unique(), // Google's permanent account id
+  email: text("email"),
   role: roleEnum("role").notNull(),
   employeeId: integer("employee_id"),
   active: boolean("active").notNull().default(true),

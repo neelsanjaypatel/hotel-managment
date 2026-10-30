@@ -5,7 +5,7 @@ import { requirePlatformPage } from "@/lib/auth";
 import { getDb, schema } from "@/db";
 import { hotelAccess } from "@/lib/subscription";
 import { prettyDate, rupees, rupeesPlain, todayIST } from "@/lib/format";
-import { extendTrial, recordPayment, setSuspended } from "@/lib/platform-actions";
+import { extendTrial, recordPayment, resetOwnerLogin, setSuspended } from "@/lib/platform-actions";
 import { Card, Empty, PageHeader, Stat } from "@/components/ui";
 import { ActButton, ActionForm, Input, Select } from "@/components/forms";
 import { SubscriptionBadge } from "@/components/subscription-badge";
@@ -77,6 +77,14 @@ export default async function PlatformHotelPage({ params }: PageProps<"/platform
           </Card>
         )}
       </div>
+
+      <Card title="Reset owner login" className="mt-4 max-w-md">
+        <p className="mb-3 text-sm text-muted">For an owner who lost their Google account or password. Removes the Google link and signs them out everywhere.</p>
+        <ActionForm action={resetOwnerLogin} submit="Reset login">
+          <input type="hidden" name="hotelId" value={hotel.id} />
+          <Input name="password" label="Temporary password" type="text" minLength={8} required autoComplete="off" />
+        </ActionForm>
+      </Card>
 
       <Card title="Payments" className="mt-4">
         {payments.length === 0 ? (

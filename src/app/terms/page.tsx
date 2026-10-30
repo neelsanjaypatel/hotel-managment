@@ -53,7 +53,7 @@ const SECTIONS: { id: string; title: string; points: string[] }[] = [
     id: "privacy",
     title: "5. Privacy",
     points: [
-      "We keep what the app needs to work: the hotel name and city, login names and mobile numbers, and the entries your team makes.",
+      "We keep what the app needs to work: the hotel name and city, login names and mobile numbers, the Google email of an owner who connects Google, and the entries your team makes.",
       "Data is stored on servers in Mumbai, India. Passwords are stored scrambled (hashed) and are never visible to anyone, including us.",
       "The Hotel Desk team's screens show your hotel's name, plan, logins and employee count, for billing and support. We do not open your entries unless you ask us to help with something.",
       "We do not sell or share your data with anyone. We do not show ads inside the app.",

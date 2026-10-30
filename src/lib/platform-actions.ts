@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb, schema } from "@/db";
 import { createHotelWithDefaults } from "@/db/defaults";
@@ -156,6 +156,29 @@ export async function setSuspended(hotelId: number, suspended: boolean): Promise
     await platformAudit(me.id, suspended ? "suspend" : "resume", hotelId);
     revalidatePath("/platform", "layout");
     return ok(suspended ? "Hotel suspended." : "Hotel resumed.");
+  });
+}
+
+// For an owner who lost their Google account or password: removes the Google link, sets
+// a temporary password and signs them out everywhere. They can connect Google again after.
+export async function resetOwnerLogin(_: FormState, fd: FormData): Promise<FormState> {
+  return run(async () => {
+    const me = await requirePlatformAction();
+    const hotelId = Number(fd.get("hotelId"));
+    const password = String(fd.get("password") ?? "");
+    if (password.length < 8) throw new UserError("Temporary password must be at least 8 characters.");
+    const db = await getDb();
+    const [owner] = await db
+      .select()
+      .from(schema.users)
+      .where(and(eq(schema.users.hotelId, hotelId), eq(schema.users.role, "admin")))
+      .orderBy(schema.users.id)
+      .limit(1);
+    if (!owner) throw new UserError("This hotel has no owner login.");
+    await db.update(schema.users).set({ passwordHash: await hashPassword(password), googleSub: null }).where(eq(schema.users.id, owner.id));
+    await db.delete(schema.sessions).where(eq(schema.sessions.userId, owner.id));
+    await platformAudit(me.id, "reset_owner_login", hotelId, { ownerId: owner.id });
+    return ok(`Login reset for ${owner.name} (${owner.login}). Give them the temporary password.`);
   });
 }
 

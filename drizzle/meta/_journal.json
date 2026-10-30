@@ -36,6 +36,13 @@
       "when": 1793122186236,
       "tag": "0004_salary_adjustments",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793380318554,
+      "tag": "0005_eager_menace",
+      "breakpoints": true
     }
   ]
 }

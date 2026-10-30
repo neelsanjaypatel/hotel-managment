@@ -24,6 +24,8 @@ export type CurrentUser = {
   hotelId: number | null;
   hotel: Hotel | null;
   access: Access | null;
+  email: string | null;
+  hasGoogle: boolean;
 };
 
 // A user inside a hotel, after the hotel checks passed.
@@ -81,8 +83,8 @@ function noteFailure(loginId: string) {
   if (failures.size > 10_000) failures.clear();
 }
 
-export async function login(loginId: string, password: string): Promise<boolean> {
-  if (loginLocked(loginId)) return false;
+export async function login(loginId: string, password: string): Promise<"ok" | "wrong" | "google"> {
+  if (loginLocked(loginId)) return "wrong";
   const db = await getDb();
   const [u] = await db
     .select()
@@ -92,13 +94,15 @@ export async function login(loginId: string, password: string): Promise<boolean>
   const ok = await bcrypt.compare(password, u?.passwordHash ?? (DUMMY_HASH ??= bcrypt.hashSync("-", 10)));
   if (!u || !ok) {
     noteFailure(loginId);
-    return false;
+    return "wrong";
   }
   failures.delete(loginId.trim().toLowerCase());
+  // Checked after the password, so this answer does not reveal which logins use Google.
+  if (u.googleSub) return "google";
   // Drop this user's expired sessions so the table does not grow forever.
   await db.delete(schema.sessions).where(and(eq(schema.sessions.userId, u.id), lt(schema.sessions.expiresAt, new Date())));
   await startSession(u.id);
-  return true;
+  return "ok";
 }
 
 export async function logout() {
@@ -131,6 +135,8 @@ export const getUser = cache(async (): Promise<CurrentUser | null> => {
     hotelId: u.hotelId,
     hotel,
     access: hotel ? hotelAccess(hotel, todayIST()) : null,
+    email: u.email,
+    hasGoogle: !!u.googleSub,
   };
 });
 
