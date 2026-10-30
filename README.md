@@ -185,6 +185,18 @@ close and reopen is written to `audit_log`.
    once and change it from My account.
 4. Open the site on a phone and "Add to Home screen" to install it.
 
+**AWS Lightsail (Mumbai)**, an always-on server instead of serverless:
+
+1. Lightsail > Create instance > Mumbai (ap-south-1) > Linux/Ubuntu 24.04, the 2 GB
+   plan. Attach a static IP, and in Networking open port 443 (HTTPS) next to 22 and 80.
+2. Point the domain's A record (and `www`) at the static IP.
+3. Connect with the browser SSH button and run
+   `curl -fsSL https://raw.githubusercontent.com/neelsanjaypatel/hotel-managment/main/deploy/aws/setup.sh -o setup.sh && bash setup.sh yourdomain.in`.
+   It asks for `DATABASE_URL` (hidden) and the payment note, installs Node 22 and
+   Caddy (automatic HTTPS), builds, and runs the app as the `hotel-desk` systemd service.
+4. Later updates: push to GitHub, then on the server `sudo hotel-desk-update`.
+   Logs: `journalctl -u hotel-desk -f`.
+
 **Railway** works too: `railway.json` builds with `npm run build` and starts with
 `npm start` (which migrates first); set `DATABASE_URL` to
 `${{Postgres.DATABASE_URL}}`.

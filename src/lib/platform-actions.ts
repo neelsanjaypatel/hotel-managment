@@ -58,7 +58,10 @@ async function newHotel(fd: FormData, planId?: number) {
 export async function signupAction(_: FormState, fd: FormData): Promise<FormState> {
   const res = await run(async () => {
     if (await getUser()) throw new UserError("You are already logged in.");
-    const { owner } = await newHotel(fd);
+    if (fd.get("agree") !== "on") throw new UserError("Please read the rules and tick the box to accept the terms.");
+    const { owner, hotel } = await newHotel(fd);
+    // Keeps proof of when the owner accepted the terms shown on the signup page.
+    await platformAudit(owner.id, "accept_terms", hotel.id);
     await startSession(owner.id);
     return ok("created");
   });

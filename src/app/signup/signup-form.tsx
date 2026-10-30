@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState, useTransition } from "react";
 import { signupAction } from "@/lib/platform-actions";
 
@@ -42,6 +43,13 @@ export function SignupForm() {
       <label className="block">
         <span className="label">Password (8+ characters)</span>
         <input name="password" type="password" className="field" required minLength={8} autoComplete="new-password" />
+      </label>
+      <label className="flex items-start gap-2 pt-1 text-sm">
+        <input type="checkbox" name="agree" required className="mt-1" />
+        <span>
+          I have read <a href="#rules" className="font-medium text-accent underline underline-offset-2">the rules</a> and agree to the{" "}
+          <Link href="/terms" target="_blank" className="font-medium text-accent underline underline-offset-2">terms and privacy</Link>.
+        </span>
       </label>
       {state?.error && <p className="text-sm text-danger">{state.error}</p>}
       <button className="btn w-full" disabled={pending}>

@@ -1,0 +1,16 @@
+[Unit]
+Description=Hotel Desk (Next.js)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=hoteldesk
+WorkingDirectory=/opt/hotel-desk
+EnvironmentFile=/etc/hotel-desk.env
+# npm start applies pending migrations, then serves on 127.0.0.1:3000 for Caddy.
+ExecStart=/usr/bin/npm start
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

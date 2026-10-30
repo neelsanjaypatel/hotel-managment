@@ -6,7 +6,9 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "Hotel Desk",
     short_name: "Hotel Desk",
     description: "Daily counter, expenses, payroll and partner reports for the hotel.",
-    start_url: "/",
+    // Opens on login (which forwards to the dashboard when signed in), not the welcome page.
+    id: "/",
+    start_url: "/login",
     display: "standalone",
     background_color: "#f5f4ef",
     theme_color: "#1e6b4e",
