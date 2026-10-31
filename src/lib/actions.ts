@@ -691,17 +691,56 @@ export async function savePartner(_: FormState, fd: FormData): Promise<FormState
     if (!name) throw new UserError("Partner name is required.");
     const bp = shareBp(fd);
     const id = Number(fd.get("id")) || null;
-    if (id) await owned(schema.partners, id, admin.hotelId, "partner");
-    const userId = Number(fd.get("userId")) || null;
-    if (userId) await owned(schema.users, userId, admin.hotelId, "login");
-    const values = { name, phone: str(fd, "phone"), shareBp: bp, userId };
+    const existing = id ? await owned(schema.partners, id, admin.hotelId, "partner") : null;
+    const pickedId = Number(fd.get("userId")) || null;
+    if (pickedId) await owned(schema.users, pickedId, admin.hotelId, "login");
+    const { users, sessions } = schema;
     const db = await getDb();
+    const [linked] = pickedId ? await db.select().from(users).where(eq(users.id, pickedId)) : [];
+    // Only a partner's own login is managed here; an owner who is also a partner stays as is.
+    const ownLogin = !linked || linked.role === "partner";
+    const wantLogin = ownLogin && fd.get("giveLogin") === "on";
+    const phone = str(fd, "phone");
+    // The mobile is the login id, except on older logins made with a username.
+    const mobileIsLogin = !linked || linked.login === existing?.phone;
+    if (wantLogin && mobileIsLogin && !/^[6-9]\d{9}$/.test(phone ?? "")) throw new UserError("Enter a 10-digit mobile number. It becomes the login ID.");
+    const password = String(fd.get("loginPassword") ?? "");
+    if (wantLogin && !linked && !password) throw new UserError("Enter a password for this partner's login.");
+    if (wantLogin && password && password.length < 8) throw new UserError("Password must be at least 8 characters.");
+    const passwordHash = wantLogin && password ? await hashPassword(password) : null;
+
+    // Returns the login to link to this partner.
+    const syncLogin = async (tx: Tx) => {
+      if (!ownLogin) return pickedId;
+      if (!wantLogin) {
+        if (linked?.active) {
+          await tx.update(users).set({ active: false }).where(eq(users.id, linked.id));
+          await tx.delete(sessions).where(eq(sessions.userId, linked.id));
+        }
+        return pickedId;
+      }
+      if (!linked?.active) await needSlot(tx, admin, "logins");
+      const login = mobileIsLogin ? phone! : linked!.login;
+      if (login !== linked?.login) {
+        const [taken] = await tx.select({ id: users.id }).from(users).where(eq(users.login, login));
+        if (taken) throw new UserError("This mobile number already has a login.");
+      }
+      const account = { name, login, active: true };
+      if (!linked) {
+        const [made] = await tx.insert(users).values({ ...account, hotelId: admin.hotelId, role: "partner", passwordHash: passwordHash! }).returning({ id: users.id });
+        return made.id;
+      }
+      await tx.update(users).set(passwordHash ? { ...account, passwordHash } : account).where(eq(users.id, linked.id));
+      if (passwordHash) await tx.delete(sessions).where(eq(sessions.userId, linked.id));
+      return linked.id;
+    };
     const saved = await db.transaction(async (tx) => {
       await lockHotel(tx, admin.hotelId);
       const others = await activeShareTotal(tx, admin.hotelId, id ?? undefined);
       if (others + bp > 10000) {
         throw new UserError(`Shares would add up to ${(others + bp) / 100}%. Total cannot be more than 100%.`);
       }
+      const values = { name, phone, shareBp: bp, userId: await syncLogin(tx) };
       if (id) {
         await tx.update(schema.partners).set(values).where(and(eq(schema.partners.id, id), eq(schema.partners.hotelId, admin.hotelId)));
         return id;
@@ -709,7 +748,7 @@ export async function savePartner(_: FormState, fd: FormData): Promise<FormState
       const [row] = await tx.insert(schema.partners).values({ ...values, hotelId: admin.hotelId }).returning();
       return row.id;
     });
-    await audit(admin, id ? "update" : "create", "partner", saved, values);
+    await audit(admin, id ? "update" : "create", "partner", saved, { name, phone, shareBp: bp, login: wantLogin });
     revalidatePath("/", "layout");
     return ok(id ? "Partner updated." : "Partner added.");
   });
@@ -718,9 +757,17 @@ export async function savePartner(_: FormState, fd: FormData): Promise<FormState
 export async function removePartner(partnerId: number): Promise<FormState> {
   return run(async () => {
     const admin = await requireAction("manageMaster");
-    await owned(schema.partners, partnerId, admin.hotelId, "partner");
+    const partner = await owned(schema.partners, partnerId, admin.hotelId, "partner");
     const db = await getDb();
-    await db.update(schema.partners).set({ active: false }).where(and(eq(schema.partners.id, partnerId), eq(schema.partners.hotelId, admin.hotelId)));
+    const { users, sessions } = schema;
+    await db.transaction(async (tx) => {
+      await tx.update(schema.partners).set({ active: false }).where(and(eq(schema.partners.id, partnerId), eq(schema.partners.hotelId, admin.hotelId)));
+      // An owner who was also a partner keeps their login.
+      if (partner.userId) {
+        const off = await tx.update(users).set({ active: false }).where(and(eq(users.id, partner.userId as number), eq(users.role, "partner"))).returning({ id: users.id });
+        if (off.length) await tx.delete(sessions).where(eq(sessions.userId, off[0].id));
+      }
+    });
     await audit(admin, "remove", "partner", partnerId);
     revalidatePath("/", "layout");
     return ok("Partner removed.");

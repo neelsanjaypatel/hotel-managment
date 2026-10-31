@@ -281,6 +281,28 @@ async function main() {
     check("Deleting the expense deletes its photo", left.n === 0);
   }
 
+  // ---- partner form creates the login ----
+  {
+    const h = await hotel("partnera");
+    const mobile = `6${String(Date.now()).slice(-9)}`;
+    const made = (await h.as(() => actions.savePartner(null, form({ name: "Mehul", phone: mobile, share: "25", giveLogin: "on", loginPassword: "partner-pass1" })))) as { ok?: string };
+    const [u] = await db.select().from(schema.users).where(eq(schema.users.login, mobile));
+    const [p] = await db.select().from(schema.partners).where(eq(schema.partners.hotelId, h.hotel.id));
+    check("Partner form creates a partner login", !!made.ok && u?.role === "partner" && p.userId === u.id);
+    check("Partner logs in with mobile and password", (await login(mobile, "partner-pass1")) === "ok");
+    const newMobile = `7${mobile.slice(1)}`;
+    await h.as(() => actions.savePartner(null, form({ id: String(p.id), userId: String(u.id), name: "Mehul", phone: newMobile, share: "25", giveLogin: "on" })));
+    check("Changing a partner's mobile moves the login, password stays", (await login(newMobile, "partner-pass1")) === "ok");
+    await h.as(() => actions.removePartner(p.id));
+    check("Removed partner cannot log in", (await login(newMobile, "partner-pass1")) === "wrong");
+    const owner = h.owner;
+    await h.as(() => actions.savePartner(null, form({ name: "Owner share", share: "10", userId: String(owner.id) })));
+    const [ownerPartner] = await db.select().from(schema.partners).where(eq(schema.partners.userId, owner.id));
+    await h.as(() => actions.removePartner(ownerPartner.id));
+    const [still] = await db.select().from(schema.users).where(eq(schema.users.id, owner.id));
+    check("Removing an owner's partner share leaves the owner login alone", still.active && still.role === "admin");
+  }
+
   // ---- entries racing the day close ----
   {
     const h = await hotel("close");

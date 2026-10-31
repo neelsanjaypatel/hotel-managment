@@ -16,6 +16,44 @@ const ROLES = [
   { value: "employee", label: "Employee (own salary only)" },
 ];
 
+// Shown with CSS rather than state so the form's reset also hides the password box again.
+function PartnerLogin({
+  partner,
+  login,
+  options,
+}: {
+  partner?: { phone: string | null; userId: number | null };
+  login?: { login: string; role: string; active: boolean };
+  options: { value: number; label: string }[];
+}) {
+  if (login && login.role !== "partner") {
+    return (
+      <p className="mt-3 text-xs text-muted">
+        Linked to {login.login}, which stays as it is.
+        <input type="hidden" name="userId" value={partner?.userId ?? ""} />
+      </p>
+    );
+  }
+  return (
+    <fieldset className="group mt-3">
+      {login && <input type="hidden" name="userId" value={partner?.userId ?? ""} />}
+      <label className="flex items-center gap-2 text-sm font-medium">
+        <input type="checkbox" name="giveLogin" defaultChecked={login?.active} />
+        Give app login
+      </label>
+      <div className="mt-2 hidden group-has-[input:checked]:block">
+        {login && login.login !== partner?.phone && <p className="mb-2 text-xs text-muted">Login ID: {login.login}</p>}
+        <Input name="loginPassword" label={login ? "New password (blank keeps it)" : "Password"} type="password" autoComplete="new-password" minLength={8} />
+      </div>
+      {!login && (
+        <div className="mt-2 group-has-[input:checked]:hidden">
+          <Select name="userId" label="Or link an existing login" options={options} placeholder="None" />
+        </div>
+      )}
+    </fieldset>
+  );
+}
+
 export default async function SettingsPage() {
   const me = await requirePage("manageMaster");
   const db = await getDb();
@@ -154,9 +192,9 @@ export default async function SettingsPage() {
                               <input type="hidden" name="id" value={p.id} />
                               <div className="space-y-2">
                                 <Input name="name" label="Name" defaultValue={p.name} required />
-                                <Input name="phone" label="Phone" defaultValue={p.phone ?? ""} inputMode="tel" />
+                                <Input name="phone" label="Mobile number" defaultValue={p.phone ?? ""} inputMode="tel" />
                                 <Input name="share" label="Share (%)" defaultValue={String(p.shareBp / 100)} inputMode="decimal" required />
-                                <Select name="userId" label="Their login (optional)" options={loginOptions} defaultValue={p.userId ?? ""} placeholder="None" />
+                                <PartnerLogin partner={p} login={userRows.find(({ u }) => u.id === p.userId)?.u} options={loginOptions} />
                               </div>
                             </ActionForm>
                           </div>
@@ -173,12 +211,12 @@ export default async function SettingsPage() {
         <ActionForm action={savePartner} submit="Add partner">
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             <Input name="name" label="Partner name" required />
-            <Input name="phone" label="Phone" inputMode="tel" />
+            <Input name="phone" label="Mobile number" inputMode="tel" />
             <Input name="share" label="Share (%)" inputMode="decimal" placeholder="e.g. 10" required />
-            <Select name="userId" label="Their login (optional)" options={loginOptions} placeholder="None" />
           </div>
+          <PartnerLogin options={loginOptions} />
         </ActionForm>
-        <p className="mt-2 text-xs text-muted">Linking a login lets that partner see their own row highlighted on the Partners page.</p>
+        <p className="mt-2 text-xs text-muted">A partner&apos;s login sees reports and their share, and cannot change entries. The mobile number is the login ID.</p>
       </Card>
 
       <Card title="Expense categories" className="mt-4">
