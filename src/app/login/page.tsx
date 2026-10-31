@@ -25,7 +25,7 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
     <div className={`${display.variable} min-h-dvh md:grid md:grid-cols-[minmax(0,6fr)_minmax(0,5fr)]`}>
       {/* The same welcome as the signup page: the day starts at the hotel's front door. */}
       <aside className="relative isolate flex min-h-44 flex-col justify-between overflow-hidden p-6 text-white md:sticky md:top-0 md:h-dvh md:min-h-0 md:p-10">
-        <Image src={PHOTOS.diningRoom.src} alt={PHOTOS.diningRoom.alt} fill priority sizes="(min-width: 768px) 55vw, 100vw" className="-z-10 object-cover" />
+        <Image src={PHOTOS.hero.src} alt={PHOTOS.hero.alt} fill priority sizes="(min-width: 768px) 55vw, 100vw" className="-z-10 object-cover" />
         <div className="absolute inset-0 -z-10 bg-gradient-to-b from-black/65 via-black/35 to-black/80" aria-hidden />
         <Link href="/welcome" className="flex items-center gap-2 font-display text-lg font-bold">
           <Mark />

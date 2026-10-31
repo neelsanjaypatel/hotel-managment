@@ -122,6 +122,17 @@ body {
   color: var(--ink);
   border: 1px solid var(--line);
 }
+/* Plain CSS outranks Tailwind's utilities, so button sizes live here. */
+.btn-lg {
+  padding: 0.85rem 1.6rem;
+  font-size: 1.05rem;
+  border-radius: 10px;
+}
+/* Log in on top of a photo. */
+.btn-light {
+  background: #fff;
+  color: #1d1c19;
+}
 
 .tbl {
   width: 100%;

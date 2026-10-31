@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { TRIAL_DAYS } from "@/db/defaults";
 import { GRACE_DAYS } from "@/lib/subscription";
-import { PHOTOS } from "@/lib/photos";
 import { display, PublicFooter, PublicHeader } from "@/components/public-chrome";
 
 export const metadata: Metadata = {
@@ -108,22 +107,9 @@ export default function TermsPage() {
           </section>
         ))}
 
-        <section id="photos" className="mt-16 scroll-mt-6 border-t border-line pt-10">
-          <h2 className="font-display text-2xl font-bold tracking-tight">Photo credits</h2>
-          <p className="mt-2 text-sm text-muted">
-            Photos on the welcome and signup pages are from Wikimedia Commons, resized and cropped, and shared under the licence shown.
-          </p>
-          <ul className="mt-4 space-y-2 text-sm">
-            {Object.values(PHOTOS).map((p) => (
-              <li key={p.src} className="[overflow-wrap:anywhere]">
-                <a href={p.source} className="text-accent underline underline-offset-2" rel="noopener">{p.title}</a>
-                {" by "}{p.artist}
-                {", "}
-                <a href={p.licenseUrl} className="text-accent underline underline-offset-2" rel="license noopener">{p.license}</a>
-              </li>
-            ))}
-          </ul>
-        </section>
+        <p id="photos" className="mt-16 border-t border-line pt-8 text-sm text-muted">
+          Images on the welcome, login and signup pages are generated with AI to show the kind of place Hotel Desk is for. They are not real hotels, customers or staff.
+        </p>
 
         <p className="mt-12 text-sm text-muted">
           Questions? Owners can reach Hotel Desk support from the <Link href="/billing" className="text-accent">Billing</Link> page.

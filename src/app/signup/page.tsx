@@ -21,7 +21,7 @@ export default async function SignupPage() {
     <div className={`${display.variable} min-h-dvh md:grid md:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]`}>
       {/* Welcome panel: the flowers at a hotel entrance, the plans on top of them. */}
       <aside className="relative isolate flex min-h-64 flex-col justify-between overflow-hidden p-6 text-white md:sticky md:top-0 md:h-dvh md:p-10">
-        <Image src={PHOTOS.welcome.src} alt={PHOTOS.welcome.alt} fill priority sizes="(min-width: 768px) 45vw, 100vw" className="-z-10 object-cover" />
+        <Image src={PHOTOS.room.src} alt={PHOTOS.room.alt} fill priority sizes="(min-width: 768px) 45vw, 100vw" className="-z-10 object-cover" />
         <div className="absolute inset-0 -z-10 bg-gradient-to-b from-black/70 via-black/45 to-black/80" aria-hidden />
         <Link href="/welcome" className="flex items-center gap-2 font-display text-lg font-bold">
           <Mark />

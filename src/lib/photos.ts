@@ -1,13 +1,10 @@
-// Photos on the public pages (welcome, signup), from Wikimedia Commons under Creative Commons
-// licences. Each licence requires credit, which /terms#photos lists from this table.
+// Images on the public pages. Generated with AI to show the kind of place Hotel Desk is for, not
+// real hotels, people or customers; /terms says so.
 export const PHOTOS = {
-  diningRoom: { src: "/photos/dining-room.jpg", w: 1600, h: 1063, alt: "Warm-lit Indian dhaba dining room with low tables and flower bowls", title: "Indiandhaba-interior.jpg", artist: "Barun", license: "CC BY-SA 3.0", licenseUrl: "https://creativecommons.org/licenses/by-sa/3.0", source: "https://commons.wikimedia.org/wiki/File:Indiandhaba-interior.jpg" },
-  kitchen: { src: "/photos/kitchen.jpg", w: 1600, h: 1200, alt: "Cook making dosas on a hot griddle in a restaurant kitchen", title: "Chef cooking Mysore masala dosa in Mysuru, July 2013.jpg", artist: "Sunnya343", license: "CC BY-SA 4.0", licenseUrl: "https://creativecommons.org/licenses/by-sa/4.0", source: "https://commons.wikimedia.org/wiki/File:Chef_cooking_Mysore_masala_dosa_in_Mysuru,_July_2013.jpg" },
-  room: { src: "/photos/room.jpg", w: 1600, h: 1021, alt: "Heritage hotel room with a four-poster bed and chequered floor", title: "Bari Kothi 4.jpg", artist: "Rangan Datta Wiki", license: "CC BY-SA 4.0", licenseUrl: "https://creativecommons.org/licenses/by-sa/4.0", source: "https://commons.wikimedia.org/wiki/File:Bari_Kothi_4.jpg" },
-  banquet: { src: "/photos/banquet.jpg", w: 1600, h: 1200, alt: "Banquet hall with chandeliers and guests seated at round tables", title: "Meeting cum banquet hall in Darbhanga, Bihar.jpg", artist: "Bikramksingh", license: "CC BY-SA 4.0", licenseUrl: "https://creativecommons.org/licenses/by-sa/4.0", source: "https://commons.wikimedia.org/wiki/File:Meeting_cum_banquet_hall_in_Darbhanga,_Bihar.jpg" },
-  cashCounter: { src: "/photos/cash-counter.jpg", w: 1600, h: 900, alt: "Restaurant owner at the cash counter beside an old cash register", title: "Traditional restaurant at Margao, Goa, India.jpg", artist: "Fredericknoronha", license: "CC BY-SA 4.0", licenseUrl: "https://creativecommons.org/licenses/by-sa/4.0", source: "https://commons.wikimedia.org/wiki/File:Traditional_restaurant_at_Margao,_Goa,_India.jpg" },
-  welcome: { src: "/photos/welcome-flowers.jpg", w: 1600, h: 860, alt: "Brass urli filled with red flower petals at a hotel entrance", title: "India - Sights & Culture - Flowers in a hotel lobby (2281756238).jpg", artist: "McKay Savage from London, UK", license: "CC BY 2.0", licenseUrl: "https://creativecommons.org/licenses/by/2.0", source: "https://commons.wikimedia.org/wiki/File:India_-_Sights_%26_Culture_-_Flowers_in_a_hotel_lobby_(2281756238).jpg" },
-  thali: { src: "/photos/thali.jpg", w: 1600, h: 1200, alt: "Steel thali with roti, rice, curries and raita", title: "Non Veg Thali - Gandhi Nagar Jammu - Jammu & Kashmir - 01.jpg", artist: "Krrisd", license: "CC BY-SA 4.0", licenseUrl: "https://creativecommons.org/licenses/by-sa/4.0", source: "https://commons.wikimedia.org/wiki/File:Non_Veg_Thali_-_Gandhi_Nagar_Jammu_-_Jammu_%26_Kashmir_-_01.jpg" },
+  hero: { src: "/photos/ai/hero.webp", w: 1376, h: 714, alt: "Hotel owner in a green saree checking her phone at the reception desk of a warm, sunlit lobby" },
+  counter: { src: "/photos/ai/counter.webp", w: 922, h: 714, alt: "Cashier smiling at his phone at a busy restaurant counter" },
+  kitchen: { src: "/photos/ai/kitchen.webp", w: 1293, h: 714, alt: "Kitchen manager marking attendance on his phone while cooks work behind him" },
+  banquet: { src: "/photos/ai/banquet.webp", w: 1293, h: 714, alt: "Banquet hall dressed in marigolds and chandeliers for a wedding reception" },
+  room: { src: "/photos/ai/room.webp", w: 1293, h: 714, alt: "Bright hotel room with a carved headboard and morning sun on the wall" },
+  dayClose: { src: "/photos/ai/dayclose.webp", w: 1293, h: 714, alt: "Hotel owner at his desk at night, smiling at his phone beside the day's cash" },
 } as const;
-
-export type Photo = (typeof PHOTOS)[keyof typeof PHOTOS];

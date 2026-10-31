@@ -24,7 +24,7 @@ export function LoginForm() {
         <input name="password" type="password" className="field" autoComplete="current-password" required />
       </label>
       {state?.error && <p className="text-sm text-danger">{state.error}</p>}
-      <button className="btn w-full" disabled={pending}>
+      <button className="btn btn-lg w-full" disabled={pending}>
         {pending ? "Checking..." : "Log in"}
       </button>
     </form>

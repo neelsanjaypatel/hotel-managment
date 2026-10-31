@@ -228,7 +228,7 @@ Owners can log in with Google. Without these variables the button is hidden and 
 
 1. In Google Cloud Console, create a project, set up the consent screen, and create an OAuth client of type Web application.
 2. Add the authorized redirect URI `https://<your-domain>/auth/google/callback`.
-3. Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `APP_URL` (for example `https://hoteldesk.in`) in the server environment.
+3. Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `APP_URL` (for example `https://www.desk24.in`) in the server environment.
 
 An owner connects Google from My account; after that their password stops working. If they lose the Google account, the platform owner resets the login on the hotel's Platform page.
 
