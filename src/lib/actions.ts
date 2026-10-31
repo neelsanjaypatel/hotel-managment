@@ -9,6 +9,8 @@ import { getUser, hashPassword, keepOnlyThisSession, login, loginLocked, logout,
 import { addDays, isISODate, toPaise, todayIST, PAID_MODES } from "./format";
 import { UserError, amount, audit, checkEntryDate, fail, isUniqueViolation, lockHotel, ok, onOpenDay, owned, run, str, type FormState, type Tx } from "./action-helpers";
 import type { AttendanceStatus } from "@/db/schema";
+import { dropPhoto, readPhoto, storePhoto } from "./attachments";
+import { canEncrypt, decrypt, encrypt, validAadhaar } from "./secure";
 
 export type { FormState } from "./action-helpers";
 
@@ -129,9 +131,11 @@ export async function addExpense(_: FormState, fd: FormData): Promise<FormState>
     const user = await requireAction("enterCounter");
     const date = await checkEntryDate(user, fd.get("date"));
     const values = await parseExpense(user, fd);
-    const [row] = await onOpenDay(user, date, (tx) =>
-      tx.insert(schema.expenses).values({ hotelId: user.hotelId, date, ...values, createdBy: user.id }).returning(),
-    );
+    const photo = await readPhoto(fd, "photo", "bill");
+    const [row] = await onOpenDay(user, date, async (tx) => {
+      const attachmentId = photo ? await storePhoto(tx, user, photo) : null;
+      return tx.insert(schema.expenses).values({ hotelId: user.hotelId, date, ...values, attachmentId, createdBy: user.id }).returning();
+    });
     await audit(user, "create", "expense", row.id, row);
     revalidatePath("/", "layout");
     return ok("Expense added.");
@@ -208,7 +212,10 @@ export async function deleteEntry(kind: keyof typeof ENTRY_TABLES, id: number): 
         throw new UserError("This entry belongs to a closed booking and cannot be deleted here.");
       }
     }
-    await onOpenDay(user, await checkEntryDate(user, row.date), (tx) => tx.delete(table).where(where));
+    await onOpenDay(user, await checkEntryDate(user, row.date), async (tx) => {
+      await tx.delete(table).where(where);
+      if ("attachmentId" in row) await dropPhoto(tx, row.attachmentId);
+    });
     await audit(user, "delete", kind, id, row);
     revalidatePath("/", "layout");
     return ok("Entry deleted.");
@@ -241,8 +248,14 @@ export async function updateEntry(kind: keyof typeof ENTRY_TABLES, id: number, _
               : kind === "transfer"
                 ? parseTransfer(fd)
                 : parsePaid(fd);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const [after] = await onOpenDay(user, date, (tx) => tx.update(table).set(values as any).where(where).returning());
+    const photo = kind === "expense" ? await readPhoto(fd, "photo", "bill") : null;
+    const [after] = await onOpenDay(user, date, async (tx) => {
+      const attachment = photo ? { attachmentId: await storePhoto(tx, user, photo) } : {};
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const rows = await tx.update(table).set({ ...values, ...attachment } as any).where(where).returning();
+      if (photo && "attachmentId" in before) await dropPhoto(tx, before.attachmentId);
+      return rows;
+    });
     await audit(user, "update", kind, id, { before, after });
     revalidatePath("/", "layout");
     return ok("Entry updated.");
@@ -402,6 +415,10 @@ const employeeSchema = z.object({
   joinDate: z.string().refine(isISODate, "Join date is required"),
 });
 
+// Logins made from the employee form. Owners and partners are set up in Settings.
+const STAFF_ROLES = ["manager", "cashier", "viewer", "employee"] as const;
+const isStaffRole = (r: string) => (STAFF_ROLES as readonly string[]).includes(r);
+
 export async function saveEmployee(_: FormState, fd: FormData): Promise<FormState> {
   return run(async () => {
     const user = await requireAction("manageMaster");
@@ -416,6 +433,52 @@ export async function saveEmployee(_: FormState, fd: FormData): Promise<FormStat
     const existing = id ? await owned(schema.employees, id, user.hotelId, "employee") : null;
     // New employee, or an inactive one being made active again, takes a plan slot.
     const takesSlot = active && (!existing || !existing.active);
+    const { users, sessions } = schema;
+    const [linked] = id
+      ? await db.select().from(users).where(and(eq(users.hotelId, user.hotelId), eq(users.employeeId, id))).orderBy(asc(users.id)).limit(1)
+      : [];
+    // A login linked to an owner or partner stays as Settings left it.
+    const staffLogin = !linked || isStaffRole(linked.role);
+    const wantLogin = staffLogin && active && fd.get("giveLogin") === "on";
+    const role = z.enum(STAFF_ROLES).safeParse(fd.get("loginRole"));
+    if (wantLogin && !role.success) throw new UserError("Choose what this employee can do in the app.");
+    // The mobile is the login id, except on older logins made with a username.
+    const mobileIsLogin = !linked || linked.login === existing?.phone;
+    const phone = p.data.phone || null;
+    if (wantLogin && mobileIsLogin && !/^[6-9]\d{9}$/.test(phone ?? "")) throw new UserError("Enter a 10-digit mobile number. It becomes the login ID.");
+    const password = String(fd.get("loginPassword") ?? "");
+    if (wantLogin && !linked && !password) throw new UserError("Enter a password for this employee's login.");
+    if (wantLogin && password && password.length < 8) throw new UserError("Password must be at least 8 characters.");
+    const passwordHash = wantLogin && password ? await hashPassword(password) : null;
+    const aadhaar = String(fd.get("aadhaar") ?? "").replace(/\s/g, "");
+    if (aadhaar && !validAadhaar(aadhaar)) throw new UserError("That Aadhaar number is not valid. Please check it.");
+    if (aadhaar && !canEncrypt()) throw new UserError("Aadhaar storage is not set up yet. Save without it for now.");
+    const secret = aadhaar ? { aadhaarEnc: encrypt(aadhaar), aadhaarLast4: aadhaar.slice(-4) } : {};
+    const photo = await readPhoto(fd, "photo", "employee_photo");
+
+    const syncLogin = async (tx: Tx, employeeId: number) => {
+      if (!staffLogin) return;
+      if (!wantLogin) {
+        if (linked?.active) {
+          await tx.update(users).set({ active: false }).where(eq(users.id, linked.id));
+          await tx.delete(sessions).where(eq(sessions.userId, linked.id));
+        }
+        return;
+      }
+      if (!linked?.active) await needSlot(tx, user, "logins");
+      const login = mobileIsLogin ? phone! : linked!.login;
+      if (login !== linked?.login) {
+        const [taken] = await tx.select({ id: users.id }).from(users).where(eq(users.login, login));
+        if (taken) throw new UserError("This mobile number already has a login.");
+      }
+      const values = { name: p.data.name, login, role: role.data!, active: true };
+      if (!linked) {
+        await tx.insert(users).values({ ...values, hotelId: user.hotelId, employeeId, passwordHash: passwordHash! });
+        return;
+      }
+      await tx.update(users).set(passwordHash ? { ...values, passwordHash } : values).where(eq(users.id, linked.id));
+      if (passwordHash) await tx.delete(sessions).where(eq(sessions.userId, linked.id));
+    };
     // A changed salary applies from the chosen date; earlier months keep the old rate.
     const rateFrom = fd.get("rateFrom");
     const rateChanged = !!existing && existing.rate !== rate;
@@ -428,7 +491,9 @@ export async function saveEmployee(_: FormState, fd: FormData): Promise<FormStat
       if (id) {
         await db.transaction(async (tx) => {
           if (takesSlot) await needSlot(tx, user, "employees");
-          await tx.update(schema.employees).set(values).where(and(eq(schema.employees.id, id), eq(schema.employees.hotelId, user.hotelId)));
+          const photoSet = photo ? { photoId: await storePhoto(tx, user, photo) } : {};
+          await tx.update(schema.employees).set({ ...values, ...secret, ...photoSet }).where(and(eq(schema.employees.id, id), eq(schema.employees.hotelId, user.hotelId)));
+          if (photo) await dropPhoto(tx, existing!.photoId);
           if (rateChanged) {
             // Employees saved before salary history existed have no rows yet: record the
             // old rate from the join date first so earlier months keep it.
@@ -441,23 +506,41 @@ export async function saveEmployee(_: FormState, fd: FormData): Promise<FormStat
               .values({ hotelId: user.hotelId, employeeId: id, fromDate: rateFrom as string, rate })
               .onConflictDoUpdate({ target: [schema.employeeRates.employeeId, schema.employeeRates.fromDate], set: { rate } });
           }
+          await syncLogin(tx, id);
         });
-        await audit(user, "update", "employee", id, { before: existing, after: { ...values, rate, rateFrom: rateChanged ? rateFrom : undefined } });
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { aadhaarEnc, ...before } = existing!;
+        await audit(user, "update", "employee", id, { before, after: { ...values, rate, rateFrom: rateChanged ? rateFrom : undefined } });
       } else {
         const row = await db.transaction(async (tx) => {
           if (takesSlot) await needSlot(tx, user, "employees");
-          const [r] = await tx.insert(schema.employees).values({ ...values, hotelId: user.hotelId }).returning();
+          const photoId = photo ? await storePhoto(tx, user, photo) : null;
+          const [r] = await tx.insert(schema.employees).values({ ...values, ...secret, photoId, hotelId: user.hotelId }).returning();
           await tx.insert(schema.employeeRates).values({ hotelId: user.hotelId, employeeId: r.id, fromDate: p.data.joinDate, rate });
+          await syncLogin(tx, r.id);
           return r;
         });
         await audit(user, "create", "employee", row.id, values);
       }
     } catch (e) {
-      if (isUniqueViolation(e)) throw new UserError("That employee code is already used.");
+      if (isUniqueViolation(e)) throw new UserError("That employee code or mobile number is already used.");
       throw e;
     }
     revalidatePath("/", "layout");
-    return ok(id ? "Employee updated." : "Employee added.");
+    if (!id) return ok(wantLogin ? `Employee added. They log in with ${phone}.` : "Employee added.");
+    return ok("Employee updated.");
+  });
+}
+
+// The full Aadhaar number, for the owner only. Every look goes in the activity log.
+export async function revealAadhaar(employeeId: number): Promise<FormState> {
+  return run(async () => {
+    const user = await requireAction("manageMaster");
+    const e = await owned(schema.employees, employeeId, user.hotelId, "employee");
+    if (!e.aadhaarEnc) throw new UserError("No Aadhaar number saved.");
+    if (!canEncrypt()) throw new UserError("Aadhaar storage is not set up yet.");
+    await audit(user, "view_aadhaar", "employee", employeeId);
+    return ok(decrypt(e.aadhaarEnc as string).replace(/(\d{4})(?=\d)/g, "$1 "));
   });
 }
 

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ActionForm, Chips, Input, Select } from "@/components/forms";
+import { PhotoField } from "@/components/photo-field";
 import { addAdvance, addExpense, addReceipt, addSale, addTransfer, type FormState } from "@/lib/actions";
 import { PAY_MODE_LABEL, SALE_MODE_LABEL, UNIT_LABEL, rupeesPlain } from "@/lib/format";
 
@@ -102,6 +103,7 @@ export function ExpenseForm({
           </select>
         </label>
         <Chips name="paidVia" label="Paid by" options={EXPENSE_MODES} value={paidVia} onChange={setPaidVia} />
+        <PhotoField name="photo" label="Bill photo (optional)" kind="bill" current={initial?.attachmentId as number | null | undefined} />
         {(paidVia === "credit" || suppliers.length > 0) && (
           <Select
             name="supplierId"

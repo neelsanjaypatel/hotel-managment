@@ -231,3 +231,11 @@ Owners can log in with Google. Without these variables the button is hidden and 
 3. Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `APP_URL` (for example `https://hoteldesk.in`) in the server environment.
 
 An owner connects Google from My account; after that their password stops working. If they lose the Google account, the platform owner resets the login on the hotel's Platform page.
+
+## Aadhaar and photos
+
+Aadhaar numbers are encrypted with `DATA_KEY`, 32 random bytes in base64, set in the server's environment:
+
+    openssl rand -base64 32
+
+Keep a safe copy. Without this key stored numbers cannot be read; the rest of the app keeps working. Staff and bill photos are shrunk in the browser and stored in the `attachments` table, served only through `/files/[id]`.

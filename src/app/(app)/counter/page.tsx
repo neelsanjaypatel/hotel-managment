@@ -243,6 +243,9 @@ export default async function CounterPage({ searchParams }: PageProps<"/counter"
                     <div className="flex flex-wrap items-center gap-2 text-sm">
                       <Badge tone={k.tone}>{k.label}</Badge>
                       <span className="font-medium">{en.title}</span>
+                      {en.kind === "expense" && en.row.attachmentId && (
+                        <a href={`/files/${en.row.attachmentId}`} target="_blank" rel="noopener" className="text-xs text-accent underline underline-offset-2">Bill</a>
+                      )}
                     </div>
                     <div className="mt-0.5 truncate text-xs text-muted">
                       {time.format(en.row.createdAt)}{en.sub ? ` · ${en.sub}` : ""}{en.linked ? " · from booking" : ""}

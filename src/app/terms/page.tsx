@@ -53,7 +53,8 @@ const SECTIONS: { id: string; title: string; points: string[] }[] = [
     id: "privacy",
     title: "5. Privacy",
     points: [
-      "We keep what the app needs to work: the hotel name and city, login names and mobile numbers, the Google email of an owner who connects Google, and the entries your team makes.",
+      "We keep what the app needs to work: the hotel name and city, login names and mobile numbers, the Google email of an owner who connects Google, and the entries your team makes, including staff details, staff photos and bill photos.",
+      "If an owner adds an employee's Aadhaar number, it is stored encrypted and shown only masked, as XXXX XXXX 1234. Only the owner can see the full number, and each look is recorded in the activity log. The owner must have the employee's consent and may use it only for that employee's records.",
       "Data is stored on servers in Mumbai, India. Passwords are stored scrambled (hashed) and are never visible to anyone, including us.",
       "The Hotel Desk team's screens show your hotel's name, plan, logins and employee count, for billing and support. We do not open your entries unless you ask us to help with something.",
       "We do not sell or share your data with anyone. We do not show ads inside the app.",

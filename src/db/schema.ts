@@ -12,10 +12,14 @@ import {
   uniqueIndex,
   index,
   primaryKey,
+  customType,
 } from "drizzle-orm/pg-core";
 
 // All money columns are integer paise (₹1 = 100) so sums never drift.
 // Every business table carries hotel_id; every query filters on it.
+
+// Postgres bytes, returned as a Buffer.
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => "bytea" });
 
 export const roleEnum = pgEnum("role", [
   "superadmin", // platform owner: onboards hotels, records subscription payments
@@ -141,6 +145,23 @@ export const rateLimits = pgTable("rate_limits", {
   until: timestamp("until", { withTimezone: true }).notNull(),
 });
 
+// Photos of staff and bills, shrunk in the browser first. Served only through /files/[id].
+export const attachments = pgTable(
+  "attachments",
+  {
+    id: serial("id").primaryKey(),
+    hotelId: integer("hotel_id")
+      .notNull()
+      .references(() => hotels.id),
+    kind: text("kind", { enum: ["employee_photo", "bill"] }).notNull(),
+    data: bytea("data").notNull(),
+    bytes: integer("bytes").notNull(),
+    createdBy: integer("created_by").references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("attachments_hotel").on(t.hotelId)],
+);
+
 export const employees = pgTable(
   "employees",
   {
@@ -157,6 +178,10 @@ export const employees = pgTable(
     rate: integer("rate").notNull(), // paise: monthly salary or daily wage
     joinDate: date("join_date", { mode: "string" }).notNull(),
     managerUserId: integer("manager_user_id").references(() => users.id),
+    // AES-GCM ciphertext (lib/secure); only the last four digits are kept readable.
+    aadhaarEnc: text("aadhaar_enc"),
+    aadhaarLast4: text("aadhaar_last4"),
+    photoId: integer("photo_id").references(() => attachments.id),
     active: boolean("active").notNull().default(true),
   },
   (t) => [uniqueIndex("employees_hotel_code").on(t.hotelId, t.code)],
@@ -353,6 +378,7 @@ export const expenses = pgTable(
     categoryId: integer("category_id")
       .notNull()
       .references(() => expenseCategories.id),
+    attachmentId: integer("attachment_id").references(() => attachments.id),
     amount: integer("amount").notNull(),
     paidVia: payModeEnum("paid_via").notNull(),
     vendor: text("vendor"),

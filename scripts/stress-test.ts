@@ -39,6 +39,9 @@ const load = (Module as unknown as { _load: (r: string, ...a: unknown[]) => unkn
   return mod;
 };
 
+// A throwaway key, for this test only.
+process.env.DATA_KEY = randomBytes(32).toString("base64");
+
 let failed = 0;
 function check(name: string, pass: boolean, detail = "") {
   if (!pass) failed++;
@@ -79,6 +82,8 @@ async function main() {
   const { todayIST, addDays } = await import("../src/lib/format");
   const db = await getDb();
   const eqHotel = (t: typeof schema.bookings, id: number) => eq(t.hotelId, id);
+  const eqEmployee = (id: number) => eq(schema.employees.hotelId, id);
+  const eqCategory = (id: number) => eq(schema.expenseCategories.hotelId, id);
   const today = todayIST();
   const tag = randomBytes(3).toString("hex");
 
@@ -174,6 +179,106 @@ async function main() {
     await Promise.all(Array.from({ length: 4 }, (_, i) => h.as(() => actions.savePartner(null, form({ name: `Partner ${i}`, share: "40" })))));
     const [p] = await raw<{ bp: number }[]>`select coalesce(sum(share_bp),0)::int bp from partners where hotel_id = ${h.hotel.id} and active`;
     check("Partner shares stay within 100% when saved at once", p.bp <= 10000, `${p.bp / 100}%`);
+  }
+
+  // ---- employee form creates the login ----
+  {
+    const h = await hotel("staffa");
+    const other = await hotel("staffb");
+    const mobile = `9${String(Date.now()).slice(-9)}`;
+    const base = { name: "Sita Devi", department: "Rooms", payType: "monthly", joinDate: "2020-01-01", rate: "15000" };
+    const made = (await h.as(() => actions.saveEmployee(null, form({ ...base, code: "L1", phone: mobile, giveLogin: "on", loginRole: "cashier", loginPassword: "first-pass1" })))) as { ok?: string };
+    const [u] = await db.select().from(schema.users).where(eq(schema.users.login, mobile));
+    check("Employee form creates the login", !!made.ok && u?.role === "cashier" && u.employeeId != null, made.ok ?? "");
+    check("New employee logs in with mobile and password", (await login(mobile, "first-pass1")) === "ok");
+    const noPass = (await h.as(() => actions.saveEmployee(null, form({ ...base, code: "L2", phone: `8${mobile.slice(1)}`, giveLogin: "on", loginRole: "cashier" })))) as { error?: string };
+    const noMobile = (await h.as(() => actions.saveEmployee(null, form({ ...base, code: "L3", giveLogin: "on", loginRole: "cashier", loginPassword: "first-pass1" })))) as { error?: string };
+    const dup = (await other.as(() => actions.saveEmployee(null, form({ ...base, code: "L1", phone: mobile, giveLogin: "on", loginRole: "viewer", loginPassword: "first-pass1" })))) as { error?: string };
+    const dupRows = (await db.select().from(schema.employees).where(eq(schema.employees.hotelId, other.hotel.id))).length;
+    check("Missing password, missing mobile and a used mobile are refused", !!noPass.error && !!noMobile.error && !!dup.error && dupRows === 0, dup.error ?? "");
+    const none = (await h.as(() => actions.saveEmployee(null, form({ ...base, code: "L4", name: "Helper" })))) as { ok?: string };
+    const helperLogins = (await db.select().from(schema.users).where(eq(schema.users.name, "Helper"))).length;
+    check("Employee without app login needs no mobile", !!none.ok && helperLogins === 0);
+
+    const newMobile = `7${mobile.slice(1)}`;
+    const edit = { ...base, id: String(u.employeeId), code: "L1", active: "on" };
+    await h.as(() => actions.saveEmployee(null, form({ ...edit, phone: newMobile, giveLogin: "on", loginRole: "manager", loginPassword: "second-pass2" })));
+    check("Changing the mobile changes the login id", (await login(mobile, "second-pass2")) === "wrong" && (await login(newMobile, "second-pass2")) === "ok");
+    await h.as(() => actions.saveEmployee(null, form({ ...edit, phone: newMobile, giveLogin: "on", loginRole: "manager" })));
+    check("Blank password keeps the old one", (await login(newMobile, "second-pass2")) === "ok");
+    await h.as(() => actions.saveEmployee(null, form({ ...edit, active: "off", phone: newMobile, giveLogin: "on", loginRole: "manager" })));
+    const [off] = await db.select().from(schema.users).where(eq(schema.users.id, u.id));
+    const left = await db.select().from(schema.sessions).where(eq(schema.sessions.userId, u.id));
+    check("Employee who left cannot log in", !off.active && left.length === 0 && (await login(newMobile, "second-pass2")) === "wrong");
+    await h.as(() => actions.saveEmployee(null, form({ ...edit, phone: newMobile, giveLogin: "on", loginRole: "manager" })));
+    check("Employee who returns can log in again", (await login(newMobile, "second-pass2")) === "ok");
+
+    // Older logins: a username stays, and an owner linked to an employee is not touched.
+    const [old] = await db
+      .insert(schema.employees)
+      .values({ hotelId: h.hotel.id, code: "L5", name: "Ramesh", department: "Rooms", payType: "monthly", rate: 1500000, joinDate: "2020-01-01", phone: "9111111111" })
+      .returning();
+    const name = `ramesh-${tag}`;
+    await db.insert(schema.users).values({ hotelId: h.hotel.id, name: "Ramesh", login: name, role: "manager", employeeId: old.id, passwordHash: "x" });
+    await h.as(() => actions.saveEmployee(null, form({ ...base, id: String(old.id), code: "L5", name: "Ramesh", active: "on", phone: "9222222222", giveLogin: "on", loginRole: "manager" })));
+    const kept = await db.select().from(schema.users).where(eq(schema.users.login, name));
+    check("Older username login stays as it is", kept.length === 1 && kept[0].role === "manager");
+    const [own] = await db
+      .insert(schema.employees)
+      .values({ hotelId: h.hotel.id, code: "L6", name: "Owner", department: "Admin", payType: "monthly", rate: 1500000, joinDate: "2020-01-01" })
+      .returning();
+    await db.update(schema.users).set({ employeeId: own.id }).where(eq(schema.users.id, h.owner.id));
+    await h.as(() => actions.saveEmployee(null, form({ ...base, id: String(own.id), code: "L6", name: "Owner", active: "off" })));
+    const [still] = await db.select().from(schema.users).where(eq(schema.users.id, h.owner.id));
+    check("Saving an owner's employee record never touches the owner login", still.active && still.role === "admin");
+  }
+
+  // ---- Aadhaar and photos ----
+  {
+    const h = await hotel("privacya");
+    const other = await hotel("privacyb");
+    const { GET } = await import("../src/app/files/[id]/route");
+    const { validAadhaar } = await import("../src/lib/secure");
+    const aadhaar = (() => {
+      for (let n = 234123412340; ; n++) if (validAadhaar(String(n))) return String(n);
+    })();
+    const jpeg = (size: number) => new File([new Uint8Array([0xff, 0xd8, 0xff, ...Array(size).fill(7)])], "p.jpg", { type: "image/jpeg" });
+    const base = { name: "Asha", department: "Rooms", payType: "monthly", joinDate: "2020-01-01", rate: "15000" };
+    const fdOf = (o: Record<string, string>, photo?: File) => {
+      const fd = form(o);
+      if (photo) fd.append("photo", photo);
+      return fd;
+    };
+    const bad = (await h.as(() => actions.saveEmployee(null, fdOf({ ...base, code: "A0", aadhaar: "123412341234" })))) as { error?: string };
+    check("Wrong Aadhaar number is refused", !!bad.error, bad.error ?? "");
+    await h.as(() => actions.saveEmployee(null, fdOf({ ...base, code: "A1", aadhaar: aadhaar.replace(/(\d{4})(?=\d)/g, "$1 ") }, jpeg(5000))));
+    const [e] = await db.select().from(schema.employees).where(eqEmployee(h.hotel.id));
+    check("Aadhaar is encrypted in the database", !!e.aadhaarEnc && !e.aadhaarEnc.includes(aadhaar) && e.aadhaarLast4 === aadhaar.slice(-4));
+    const shown = (await h.as(() => actions.revealAadhaar(e.id))) as { ok?: string };
+    const denied = (await other.as(() => actions.revealAadhaar(e.id))) as { error?: string };
+    check("Owner can show it; another hotel cannot", shown.ok?.replace(/\s/g, "") === aadhaar && !!denied.error);
+    const logged = await raw<{ action: string; data: unknown }[]>`select action, data from audit_log where hotel_id = ${h.hotel.id}`;
+    check("Showing it is logged", logged.some((l) => l.action === "view_aadhaar"));
+    await h.as(() => actions.saveEmployee(null, fdOf({ ...base, id: String(e.id), code: "A1", active: "on" })));
+    const after = await raw<{ data: unknown }[]>`select data from audit_log where hotel_id = ${h.hotel.id}`;
+    check("Audit log holds no Aadhaar", !JSON.stringify(after).includes("aadhaar_enc") && !JSON.stringify(after).includes("aadhaarEnc") && !JSON.stringify(after).includes(aadhaar));
+
+    const get = (o: { as: <T>(f: () => Promise<T>) => Promise<T> }, id: number) =>
+      o.as(() => GET(new Request("http://x"), { params: Promise.resolve({ id: String(id) }) }));
+    const own = await get(h, e.photoId!);
+    const foreign = await get(other, e.photoId!);
+    const anon = await GET(new Request("http://x"), { params: Promise.resolve({ id: String(e.photoId) }) });
+    check("Photo opens for its hotel only", own.status === 200 && foreign.status === 404 && anon.status === 404, `${own.status}/${foreign.status}/${anon.status}`);
+    const [cat] = await db.select().from(schema.expenseCategories).where(eqCategory(h.hotel.id));
+    const big = (await h.as(() => actions.addExpense(null, fdOf({ date: today, categoryId: String(cat.id), paidVia: "cash", amount: "500" }, jpeg(400000))))) as { error?: string };
+    const fake = (await h.as(() => actions.addExpense(null, fdOf({ date: today, categoryId: String(cat.id), paidVia: "cash", amount: "500" }, new File(["<script>"], "x.html"))))) as { error?: string };
+    check("Oversized and non-photo files are refused", !!big.error && !!fake.error);
+    await h.as(() => actions.addExpense(null, fdOf({ date: today, categoryId: String(cat.id), paidVia: "cash", amount: "500" }, jpeg(100000))));
+    const [ex] = await raw<{ id: number; attachment_id: number }[]>`select id, attachment_id from expenses where hotel_id = ${h.hotel.id}`;
+    check("Expense keeps its bill photo", (await get(h, ex.attachment_id)).status === 200);
+    await h.as(() => actions.deleteEntry("expense", ex.id));
+    const [left] = await raw<{ n: number }[]>`select count(*)::int n from attachments where id = ${ex.attachment_id}`;
+    check("Deleting the expense deletes its photo", left.n === 0);
   }
 
   // ---- entries racing the day close ----

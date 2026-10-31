@@ -8,6 +8,8 @@ import { Card, PageHeader } from "@/components/ui";
 import { PeriodPicker } from "@/components/forms";
 import { SalaryView } from "@/components/salary";
 import { EmployeeForm } from "../employee-form";
+import { AadhaarReveal } from "../aadhaar-reveal";
+import { maskAadhaar } from "@/lib/secure";
 
 export default async function EmployeePage({ params, searchParams }: PageProps<"/employees/[id]">) {
   const user = await requirePage("viewEmployees");
@@ -22,6 +24,14 @@ export default async function EmployeePage({ params, searchParams }: PageProps<"
   if (!e || (user.role === "manager" && e.managerUserId !== user.id)) notFound();
   const managers = (await db.select().from(schema.users).where(and(eq(schema.users.hotelId, user.hotelId), eq(schema.users.role, "manager")))).map((m) => ({ value: m.id, label: m.name }));
   const showPay = can(user, "viewPayroll");
+  const [login] = can(user, "manageMaster")
+    ? await db
+        .select({ login: schema.users.login, role: schema.users.role, active: schema.users.active })
+        .from(schema.users)
+        .where(and(eq(schema.users.hotelId, user.hotelId), eq(schema.users.employeeId, e.id)))
+        .orderBy(schema.users.id)
+        .limit(1)
+    : [];
   const history = showPay
     ? await db
         .select()
@@ -39,6 +49,13 @@ export default async function EmployeePage({ params, searchParams }: PageProps<"
         <Link href="/employees" className="btn btn-ghost">All employees</Link>
         <PeriodPicker name="month" type="month" value={month} max={todayIST().slice(0, 7)} />
       </PageHeader>
+      {(e.photoId || (e.aadhaarLast4 && can(user, "manageMaster"))) && (
+        <div className="mb-4 flex items-center gap-3">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          {e.photoId && <img src={`/files/${e.photoId}`} alt={e.name} className="size-16 rounded-full border border-line object-cover" />}
+          {e.aadhaarLast4 && can(user, "manageMaster") && <AadhaarReveal employeeId={e.id} masked={maskAadhaar(e.aadhaarLast4)} />}
+        </div>
+      )}
       {can(user, "viewPayroll") ? (
         <SalaryView hotelId={user.hotelId} employeeId={e.id} month={month} canEdit={can(user, "manageMaster") && user.access.canWrite && month <= todayIST().slice(0, 7)} />
       ) : (
@@ -58,7 +75,7 @@ export default async function EmployeePage({ params, searchParams }: PageProps<"
       )}
       {can(user, "manageMaster") && (
         <Card title="Edit details" className="mt-4">
-          <EmployeeForm employee={e} managers={managers} />
+          <EmployeeForm employee={e} login={login} managers={managers} />
         </Card>
       )}
     </>
