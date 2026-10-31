@@ -3,7 +3,7 @@ import { cache } from "react";
 import { createHash, randomBytes } from "node:crypto";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { and, eq, gt, lt, ne } from "drizzle-orm";
+import { and, eq, gt, lt, ne, sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { getDb, schema } from "@/db";
 import type { Hotel, Role } from "@/db/schema";
@@ -64,27 +64,36 @@ export async function startSession(userId: number) {
   });
 }
 
+// Counts tries per key across all server instances; the window restarts on each try.
+export async function overLimit(key: string, limit: number) {
+  const db = await getDb();
+  const [r] = await db.select().from(schema.rateLimits).where(eq(schema.rateLimits.key, key));
+  return !!r && r.count >= limit && r.until > new Date();
+}
+
+export async function noteTry(key: string, windowMs: number) {
+  const { rateLimits } = schema;
+  const db = await getDb();
+  await db
+    .insert(rateLimits)
+    .values({ key, count: 1, until: new Date(Date.now() + windowMs) })
+    .onConflictDoUpdate({
+      target: rateLimits.key,
+      set: { count: sql`case when ${rateLimits.until} <= now() then 1 else ${rateLimits.count} + 1 end`, until: sql`excluded.until` },
+    });
+  // Keys come from the public, so old ones must not pile up.
+  if (Math.random() < 0.01) await db.delete(rateLimits).where(lt(rateLimits.until, new Date()));
+}
+
 // Slows down password guessing: after 5 wrong tries a login is locked for 15 minutes.
-// Kept in memory, so it is per server instance; enough to stop casual brute force.
 const FAIL_LIMIT = 5;
 const LOCK_MS = 15 * 60 * 1000;
-const failures = new Map<string, { count: number; until: number }>();
+const failKey = (loginId: string) => `login:${loginId.trim().toLowerCase().slice(0, 100)}`;
 
-export function loginLocked(loginId: string) {
-  const f = failures.get(loginId.trim().toLowerCase());
-  return !!f && f.count >= FAIL_LIMIT && f.until > Date.now();
-}
-
-function noteFailure(loginId: string) {
-  const key = loginId.trim().toLowerCase();
-  const f = failures.get(key);
-  const fresh = !f || f.until <= Date.now();
-  failures.set(key, { count: fresh ? 1 : f.count + 1, until: Date.now() + LOCK_MS });
-  if (failures.size > 10_000) failures.clear();
-}
+export const loginLocked = (loginId: string) => overLimit(failKey(loginId), FAIL_LIMIT);
 
 export async function login(loginId: string, password: string): Promise<"ok" | "wrong" | "google"> {
-  if (loginLocked(loginId)) return "wrong";
+  if (await loginLocked(loginId)) return "wrong";
   const db = await getDb();
   const [u] = await db
     .select()
@@ -93,10 +102,10 @@ export async function login(loginId: string, password: string): Promise<"ok" | "
   // Compare against a dummy hash when the user is missing so timing does not leak which logins exist.
   const ok = await bcrypt.compare(password, u?.passwordHash ?? (DUMMY_HASH ??= bcrypt.hashSync("-", 10)));
   if (!u || !ok) {
-    noteFailure(loginId);
+    await noteTry(failKey(loginId), LOCK_MS);
     return "wrong";
   }
-  failures.delete(loginId.trim().toLowerCase());
+  await db.delete(schema.rateLimits).where(eq(schema.rateLimits.key, failKey(loginId)));
   // Checked after the password, so this answer does not reveal which logins use Google.
   if (u.googleSub) return "google";
   // Drop this user's expired sessions so the table does not grow forever.

@@ -58,13 +58,13 @@ export async function monthPayroll(hotelId: number, month: string, opts: { emplo
       .from(advances)
       .where(and(eq(advances.hotelId, hotelId), lte(advances.date, to))),
     db
-      .select({ employeeId: expenses.employeeId, total: sql<number>`sum(${expenses.amount})::int` })
+      .select({ employeeId: expenses.employeeId, total: sql<number>`sum(${expenses.amount})::float8` })
       .from(expenses)
       .innerJoin(expenseCategories, eq(expenseCategories.id, expenses.categoryId))
       .where(and(eq(expenses.hotelId, hotelId), between(expenses.date, from, to), eq(expenseCategories.isWages, true)))
       .groupBy(expenses.employeeId),
     db
-      .select({ employeeId: salaryPayments.employeeId, total: sql<number>`sum(${salaryPayments.amount})::int` })
+      .select({ employeeId: salaryPayments.employeeId, total: sql<number>`sum(${salaryPayments.amount})::float8` })
       .from(salaryPayments)
       .where(and(eq(salaryPayments.hotelId, hotelId), eq(salaryPayments.month, month)))
       .groupBy(salaryPayments.employeeId),
@@ -154,7 +154,7 @@ export async function monthProfit(hotelId: number, month: string, db?: DB) {
     rangeTotals(hotelId, from, to, db),
     monthPayroll(hotelId, month, {}, db),
     db
-      .select({ total: sql<number>`coalesce(sum(${expenses.amount}), 0)::int` })
+      .select({ total: sql<number>`coalesce(sum(${expenses.amount}), 0)::float8` })
       .from(expenses)
       .innerJoin(expenseCategories, eq(expenseCategories.id, expenses.categoryId))
       .where(and(eq(expenses.hotelId, hotelId), between(expenses.date, from, to), eq(expenseCategories.isWages, true))),

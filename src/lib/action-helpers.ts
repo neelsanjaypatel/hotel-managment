@@ -1,7 +1,7 @@
 import "server-only";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
-import { getDb, schema } from "@/db";
+import { getDb, schema, type DB } from "@/db";
 import { Forbidden, type HotelUser } from "./auth";
 import { addDays, isISODate, toPaise, todayIST } from "./format";
 import { ensureDay } from "./ledger";
@@ -33,6 +33,36 @@ export function isUniqueViolation(e: unknown): boolean {
   return false;
 }
 
+export type Tx = Parameters<Parameters<DB["transaction"]>[0]>[0];
+
+const CLOSED = "This day is closed. Admin must reopen it first.";
+
+// Holds the day open until the transaction ends: closing the day takes the row FOR UPDATE, so it
+// waits for entries already being saved, and entries arriving after it see "closed".
+export async function assertDayOpen(tx: Tx, hotelId: number, date: string) {
+  const [day] = await tx
+    .select({ status: schema.dayBooks.status })
+    .from(schema.dayBooks)
+    .where(and(eq(schema.dayBooks.hotelId, hotelId), eq(schema.dayBooks.date, date)))
+    .for("share");
+  if (day?.status !== "open") throw new UserError(CLOSED);
+}
+
+// Saves money entries on a day. The date must have passed checkEntryDate.
+export async function onOpenDay<T>(user: HotelUser, date: string, fn: (tx: Tx) => Promise<T>) {
+  const db = await getDb();
+  return db.transaction(async (tx) => {
+    await assertDayOpen(tx, user.hotelId, date);
+    return fn(tx);
+  });
+}
+
+// One at a time per hotel, for "check, then write" work that no row lock can cover: two people
+// booking one hall, or two presses of Pay all. Released when the transaction ends.
+export async function lockHotel(tx: Tx, hotelId: number) {
+  await tx.execute(sql`select pg_advisory_xact_lock(${hotelId}::int)`);
+}
+
 export async function audit(user: HotelUser, action: string, entity: string, entityId: string | number, data?: unknown) {
   const db = await getDb();
   await db.insert(schema.auditLog).values({ hotelId: user.hotelId, userId: user.id, action, entity, entityId: String(entityId), data: data ?? null });
@@ -57,7 +87,7 @@ export async function checkEntryDate(user: HotelUser, date: unknown): Promise<st
     throw new UserError("Only today and yesterday can be entered. Ask admin for older dates.");
   }
   const day = await ensureDay(user.hotelId, date);
-  if (day.status !== "open") throw new UserError("This day is closed. Admin must reopen it first.");
+  if (day.status !== "open") throw new UserError(CLOSED);
   return date;
 }
 

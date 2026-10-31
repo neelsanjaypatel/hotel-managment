@@ -43,6 +43,13 @@
       "when": 1793380318554,
       "tag": "0005_eager_menace",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793411841948,
+      "tag": "0006_harsh_vision",
+      "breakpoints": true
     }
   ]
 }

@@ -13,7 +13,7 @@ export async function bookingsBetween(hotelId: number, from: string, to: string,
       customer: parties.name,
       phone: parties.phone,
       // Plain SQL: drizzle drops table qualifiers inside select-list subqueries.
-      received: sql<number>`coalesce((select sum(r.amount) from receipts r where r.booking_id = "bookings"."id"), 0)::int`,
+      received: sql<number>`coalesce((select sum(r.amount) from receipts r where r.booking_id = "bookings"."id"), 0)::float8`,
     })
     .from(bookings)
     .innerJoin(parties, eq(parties.id, bookings.partyId))

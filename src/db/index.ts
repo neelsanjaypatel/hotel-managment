@@ -15,7 +15,10 @@ function create() {
   const migrationsFolder = path.join(process.cwd(), "drizzle");
   const url = process.env.DATABASE_URL;
   if (url) {
-    const client = postgres(url, { prepare: false });
+    // Each serverless instance holds its own connections and many instances run at once, so
+    // keep this small; the rest queue here instead of exhausting the database's limit.
+    // Never query `db` inside a transaction: use its `tx`, or a full pool can wait on itself.
+    const client = postgres(url, { prepare: false, max: 3, idle_timeout: 20, connect_timeout: 10 });
     const db = drizzlePg(client, { schema });
     // Production migrates once per deploy (scripts/migrate.mjs from npm run build / npm start).
     // Running it here too would let several serverless instances race on one migration.

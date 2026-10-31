@@ -7,7 +7,7 @@ import { z } from "zod";
 import { getDb, schema } from "@/db";
 import { requireAction, type HotelUser } from "./auth";
 import { addDays, bookingNo, isISODate, toPaise, todayIST, PAID_MODES } from "./format";
-import { UserError, amount, audit, checkEntryDate, isUniqueViolation, ok, owned, run, str, type FormState } from "./action-helpers";
+import { UserError, amount, assertDayOpen, audit, checkEntryDate, lockHotel, ok, onOpenDay, owned, run, str, type FormState, type Tx } from "./action-helpers";
 import { ensureDay } from "./ledger";
 
 const { bookings, receipts, sales, parties } = schema;
@@ -78,11 +78,10 @@ function readDetails(user: HotelUser, fd: FormData): Details {
 }
 
 // Same venue, overlapping dates and (for halls / tables) the same part of the day.
-async function findClash(hotelId: number, d: Details, exceptId?: number) {
+async function findClash(tx: Tx, hotelId: number, d: Details, exceptId?: number) {
   if (!d.venue) return null;
-  const db = await getDb();
   const rooms = d.unit === "rooms";
-  const rows = await db
+  const rows = await tx
     .select()
     .from(bookings)
     .where(
@@ -97,6 +96,16 @@ async function findClash(hotelId: number, d: Details, exceptId?: number) {
       ),
     );
   return rows.find((b) => rooms || b.slot === "full_day" || d.slot === "full_day" || b.slot === d.slot) ?? null;
+}
+
+// Takes the booking for this one action; a second press finds it already closed and stops.
+async function closeOut(tx: Tx, id: number, values: Partial<schema.Booking>) {
+  const [row] = await tx
+    .update(bookings)
+    .set(values)
+    .where(and(eq(bookings.id, id), inArray(bookings.status, ["tentative", "confirmed"])))
+    .returning({ id: bookings.id });
+  if (!row) throw new UserError("This booking is already closed.");
 }
 
 async function loadBooking(user: HotelUser, id: number) {
@@ -119,8 +128,6 @@ export async function createBooking(_: FormState, fd: FormData): Promise<FormSta
     const phone = str(fd, "phone");
     if (phone && !/^\d{10}$/.test(phone)) throw new UserError("Phone must be a 10-digit number.");
     const d = readDetails(user, fd);
-    const clash = await findClash(user.hotelId, d);
-    if (clash) throw new UserError(`${d.venue} is already booked: ${bookingNo(clash.number)} ${clash.title} on ${clash.date}.`);
 
     const advanceRaw = String(fd.get("advance") ?? "").trim();
     const advance = advanceRaw ? toPaise(advanceRaw) : 0;
@@ -137,9 +144,13 @@ export async function createBooking(_: FormState, fd: FormData): Promise<FormSta
     const mode = advance > 0 ? payMode(fd, "advanceMode") : null;
 
     const db = await getDb();
-    // Booking numbers are max + 1 per hotel; if two bookings are saved at the same moment
-    // the second hits the unique index, so try again with the next number.
-    const save = () => db.transaction(async (tx) => {
+    // One booking at a time per hotel: the hall check and the max + 1 number below both need
+    // to see the booking saved just before this one.
+    const booking = await db.transaction(async (tx) => {
+      await lockHotel(tx, user.hotelId);
+      const clash = await findClash(tx, user.hotelId, d);
+      if (clash) throw new UserError(`${d.venue} is already booked: ${bookingNo(clash.number)} ${clash.title} on ${clash.date}.`);
+      if (advance > 0) await assertDayOpen(tx, user.hotelId, today);
       const [party] = await tx
         .insert(parties)
         .values({ hotelId: user.hotelId, name: customer, kind: d.unit === "rooms" ? "credit" : "banquet", phone })
@@ -166,15 +177,6 @@ export async function createBooking(_: FormState, fd: FormData): Promise<FormSta
       }
       return b;
     });
-    let booking: Awaited<ReturnType<typeof save>> | undefined;
-    for (let attempt = 0; !booking; attempt++) {
-      try {
-        booking = await save();
-      } catch (e) {
-        if (attempt < 3 && isUniqueViolation(e)) continue;
-        throw e;
-      }
-    }
     await audit(user, "create", "booking", booking.id, { ...booking, advance });
     newId = booking.id;
     revalidatePath("/", "layout");
@@ -192,11 +194,14 @@ export async function updateBooking(_: FormState, fd: FormData): Promise<FormSta
     const d = readDetails(user, fd);
     const phone = str(fd, "phone");
     if (phone && !/^\d{10}$/.test(phone)) throw new UserError("Phone must be a 10-digit number.");
-    const clash = await findClash(user.hotelId, d, b.id);
-    if (clash) throw new UserError(`${d.venue} is already booked: ${bookingNo(clash.number)} ${clash.title} on ${clash.date}.`);
     const db = await getDb();
-    await db.update(bookings).set(d).where(and(eq(bookings.id, b.id), eq(bookings.hotelId, user.hotelId)));
-    await db.update(parties).set({ phone }).where(and(eq(parties.id, b.partyId), eq(parties.hotelId, user.hotelId)));
+    await db.transaction(async (tx) => {
+      await lockHotel(tx, user.hotelId);
+      const clash = await findClash(tx, user.hotelId, d, b.id);
+      if (clash) throw new UserError(`${d.venue} is already booked: ${bookingNo(clash.number)} ${clash.title} on ${clash.date}.`);
+      await tx.update(bookings).set(d).where(and(eq(bookings.id, b.id), eq(bookings.hotelId, user.hotelId)));
+      await tx.update(parties).set({ phone }).where(and(eq(parties.id, b.partyId), eq(parties.hotelId, user.hotelId)));
+    });
     await audit(user, "update", "booking", b.id, d);
     revalidatePath("/", "layout");
     return ok("Booking updated.");
@@ -210,20 +215,24 @@ export async function addBookingPayment(_: FormState, fd: FormData): Promise<For
     const b = await loadBooking(user, Number(fd.get("bookingId")));
     if (b.status === "cancelled") throw new UserError("This booking is cancelled.");
     const date = await checkEntryDate(user, todayIST());
-    const db = await getDb();
-    const [row] = await db
-      .insert(receipts)
-      .values({
-        hotelId: user.hotelId,
-        date,
-        partyId: b.partyId,
-        bookingId: b.id,
-        mode: payMode(fd, "mode"),
-        amount: amount(fd),
-        note: str(fd, "note") ?? `Payment ${bookingNo(b.number)}`,
-        createdBy: user.id,
-      })
-      .returning();
+    const [row] = await onOpenDay(user, date, async (tx) => {
+      // Stops money landing on a booking that was cancelled a moment ago.
+      const [now] = await tx.select({ status: bookings.status }).from(bookings).where(eq(bookings.id, b.id)).for("share");
+      if (now?.status === "cancelled") throw new UserError("This booking is cancelled.");
+      return tx
+        .insert(receipts)
+        .values({
+          hotelId: user.hotelId,
+          date,
+          partyId: b.partyId,
+          bookingId: b.id,
+          mode: payMode(fd, "mode"),
+          amount: amount(fd),
+          note: str(fd, "note") ?? `Payment ${bookingNo(b.number)}`,
+          createdBy: user.id,
+        })
+        .returning();
+    });
     await audit(user, "create", "receipt", row.id, row);
     revalidatePath("/", "layout");
     return ok("Payment recorded.");
@@ -239,8 +248,8 @@ export async function completeBooking(_: FormState, fd: FormData): Promise<FormS
     if (b.date > todayIST()) throw new UserError("A booking can be completed on or after its date.");
     const date = await checkEntryDate(user, todayIST());
     const bill = amount(fd, "finalAmount");
-    const db = await getDb();
-    await db.transaction(async (tx) => {
+    await onOpenDay(user, date, async (tx) => {
+      await closeOut(tx, b.id, { status: "completed", totalAmount: bill });
       await tx.insert(sales).values({
         hotelId: user.hotelId,
         date,
@@ -252,7 +261,6 @@ export async function completeBooking(_: FormState, fd: FormData): Promise<FormS
         reference: `${bookingNo(b.number)} ${b.title}`,
         createdBy: user.id,
       });
-      await tx.update(bookings).set({ status: "completed", totalAmount: bill }).where(eq(bookings.id, b.id));
     });
     await audit(user, "complete", "booking", b.id, { bill });
     revalidatePath("/", "layout");
@@ -268,7 +276,7 @@ export async function cancelBooking(_: FormState, fd: FormData): Promise<FormSta
     if (b.status === "completed" || b.status === "cancelled") throw new UserError("This booking is already closed.");
     const db = await getDb();
     const [{ paid }] = await db
-      .select({ paid: sql<number>`coalesce(sum(${receipts.amount}), 0)::int` })
+      .select({ paid: sql<number>`coalesce(sum(${receipts.amount}), 0)::float8` })
       .from(receipts)
       .where(and(eq(receipts.hotelId, user.hotelId), eq(receipts.bookingId, b.id)));
     const refundRaw = String(fd.get("refund") ?? "").trim();
@@ -278,7 +286,15 @@ export async function cancelBooking(_: FormState, fd: FormData): Promise<FormSta
     const date = paid > 0 ? await checkEntryDate(user, todayIST()) : todayIST();
     const mode = refund > 0 ? payMode(fd, "refundMode") : null;
     const reason = str(fd, "reason");
-    await db.transaction(async (tx) => {
+    const notes = [b.notes, reason && `Cancelled: ${reason}`].filter(Boolean).join("\n") || null;
+    const post = async (tx: Tx) => {
+      await closeOut(tx, b.id, { status: "cancelled", notes });
+      // A payment taken after the refund was worked out would change what is kept.
+      const [now] = await tx
+        .select({ paid: sql<number>`coalesce(sum(${receipts.amount}), 0)::float8` })
+        .from(receipts)
+        .where(and(eq(receipts.hotelId, user.hotelId), eq(receipts.bookingId, b.id)));
+      if (now.paid !== paid) throw new UserError("A payment just came in on this booking. Please check and try again.");
       if (refund > 0 && mode) {
         await tx.insert(receipts).values({
           hotelId: user.hotelId,
@@ -304,11 +320,9 @@ export async function cancelBooking(_: FormState, fd: FormData): Promise<FormSta
           createdBy: user.id,
         });
       }
-      await tx
-        .update(bookings)
-        .set({ status: "cancelled", notes: [b.notes, reason && `Cancelled: ${reason}`].filter(Boolean).join("\n") || null })
-        .where(eq(bookings.id, b.id));
-    });
+    };
+    if (paid > 0) await onOpenDay(user, date, post);
+    else await db.transaction(post);
     await audit(user, "cancel", "booking", b.id, { paid, refund, kept, reason });
     revalidatePath("/", "layout");
     return ok(kept > 0 ? "Booking cancelled. The amount kept is added to today's income." : "Booking cancelled.");

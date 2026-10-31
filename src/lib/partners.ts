@@ -33,7 +33,7 @@ export async function partnerPosition(hotelId: number, month: string, db?: DB) {
       .orderBy(schema.partners.name),
     Promise.all(fy.months.map((m) => monthProfit(hotelId, m, db))),
     db
-      .select({ partnerId: schema.partnerDrawings.partnerId, total: sql<number>`sum(${schema.partnerDrawings.amount})::int` })
+      .select({ partnerId: schema.partnerDrawings.partnerId, total: sql<number>`sum(${schema.partnerDrawings.amount})::float8` })
       .from(schema.partnerDrawings)
       .where(and(eq(schema.partnerDrawings.hotelId, hotelId), between(schema.partnerDrawings.date, fy.from, to)))
       .groupBy(schema.partnerDrawings.partnerId),

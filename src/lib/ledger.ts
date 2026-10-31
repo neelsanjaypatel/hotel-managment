@@ -8,7 +8,7 @@ const { sales, receipts, expenses, advances, dayBooks, expenseCategories, partie
 
 type ModeRow = { key: string; total: number };
 
-const sum = (col: AnyPgColumn) => sql<number>`coalesce(sum(${col}), 0)::int`;
+const sum = (col: AnyPgColumn) => sql<number>`coalesce(sum(${col}), 0)::float8`;
 
 function pick(rows: ModeRow[], key: string) {
   return rows.find((r) => r.key === key)?.total ?? 0;
@@ -16,6 +16,9 @@ function pick(rows: ModeRow[], key: string) {
 function total(rows: ModeRow[]) {
   return rows.reduce((a, r) => a + r.total, 0);
 }
+
+// Totals are float8, not int: paise in 32 bits stop at ₹2.1 crore, and float8 is exact far past
+// any hotel's lifetime turnover.
 
 // Rows of one hotel within a date range.
 const inRange = (t: { hotelId: AnyPgColumn; date: AnyPgColumn }, hotelId: number, from: string, to: string) =>
@@ -155,8 +158,8 @@ export async function partyBalances(hotelId: number, db?: DB) {
       kind: parties.kind,
       phone: parties.phone,
       // Written as plain SQL: drizzle drops table qualifiers inside select-list subqueries.
-      billed: sql<number>`coalesce((select sum(s.amount) from sales s where s.party_id = "parties"."id"), 0)::int`,
-      received: sql<number>`coalesce((select sum(r.amount + r.commission) from receipts r where r.party_id = "parties"."id"), 0)::int`,
+      billed: sql<number>`coalesce((select sum(s.amount) from sales s where s.party_id = "parties"."id"), 0)::float8`,
+      received: sql<number>`coalesce((select sum(r.amount + r.commission) from receipts r where r.party_id = "parties"."id"), 0)::float8`,
     })
     .from(parties)
     .where(and(eq(parties.hotelId, hotelId), eq(parties.active, true)))
@@ -234,11 +237,11 @@ export async function dayRows(hotelId: number, from: string, to: string, db?: DB
     t as (select date, sum(amount) filter (where direction = 'to_bank') as to_bank, sum(amount) filter (where direction = 'to_cash') as to_cash
           from cash_transfers where hotel_id = ${hotelId} and date between ${from} and ${to} group by date)
     select to_char(days.date, 'YYYY-MM-DD') as date,
-      coalesce(s.income, 0)::int as income, coalesce(s.cash, 0)::int as cash, coalesce(s.bank, 0)::int as bank,
-      coalesce(s.credit, 0)::int as credit, (coalesce(e.total, 0) + coalesce(r.commission, 0))::int as expense,
-      coalesce(a.total, 0)::int as advances, coalesce(sp.total, 0)::int as salary, coalesce(r.total, 0)::int as receipts, b.status,
+      coalesce(s.income, 0)::float8 as income, coalesce(s.cash, 0)::float8 as cash, coalesce(s.bank, 0)::float8 as bank,
+      coalesce(s.credit, 0)::float8 as credit, (coalesce(e.total, 0) + coalesce(r.commission, 0))::float8 as expense,
+      coalesce(a.total, 0)::float8 as advances, coalesce(sp.total, 0)::float8 as salary, coalesce(r.total, 0)::float8 as receipts, b.status,
       case when b.status = 'closed' then (b.counted_cash - (b.opening_cash - b.cash_deposit + coalesce(s.cash, 0)
-        + coalesce(r.cash, 0) + coalesce(t.to_cash, 0) - coalesce(e.cash, 0) - coalesce(oc.cash, 0) - coalesce(t.to_bank, 0)))::int end as diff
+        + coalesce(r.cash, 0) + coalesce(t.to_cash, 0) - coalesce(e.cash, 0) - coalesce(oc.cash, 0) - coalesce(t.to_bank, 0)))::float8 end as diff
     from days
     left join s on s.date = days.date left join e on e.date = days.date
     left join a on a.date = days.date left join r on r.date = days.date left join sp on sp.date = days.date
@@ -261,9 +264,9 @@ export async function supplierBalances(hotelId: number, db?: DB) {
       phone: suppliers.phone,
       note: suppliers.note,
       // Plain SQL: drizzle drops table qualifiers inside select-list subqueries.
-      bought: sql<number>`coalesce((select sum(e.amount) from expenses e where e.supplier_id = "suppliers"."id"), 0)::int`,
-      onCredit: sql<number>`coalesce((select sum(e.amount) from expenses e where e.supplier_id = "suppliers"."id" and e.paid_via = 'credit'), 0)::int`,
-      paid: sql<number>`coalesce((select sum(p.amount) from supplier_payments p where p.supplier_id = "suppliers"."id"), 0)::int`,
+      bought: sql<number>`coalesce((select sum(e.amount) from expenses e where e.supplier_id = "suppliers"."id"), 0)::float8`,
+      onCredit: sql<number>`coalesce((select sum(e.amount) from expenses e where e.supplier_id = "suppliers"."id" and e.paid_via = 'credit'), 0)::float8`,
+      paid: sql<number>`coalesce((select sum(p.amount) from supplier_payments p where p.supplier_id = "suppliers"."id"), 0)::float8`,
       active: suppliers.active,
     })
     .from(suppliers)

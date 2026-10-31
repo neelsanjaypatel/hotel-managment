@@ -1,12 +1,13 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb, schema } from "@/db";
 import { createHotelWithDefaults } from "@/db/defaults";
-import { getUser, hashPassword, requirePlatformAction, startSession } from "./auth";
+import { getUser, hashPassword, noteTry, overLimit, requirePlatformAction, startSession } from "./auth";
 import { addDays, toPaise, todayIST } from "./format";
 import { extendPeriod } from "./subscription";
 import { UserError, isUniqueViolation, ok, run, type FormState } from "./action-helpers";
@@ -59,6 +60,10 @@ export async function signupAction(_: FormState, fd: FormData): Promise<FormStat
   const res = await run(async () => {
     if (await getUser()) throw new UserError("You are already logged in.");
     if (fd.get("agree") !== "on") throw new UserError("Please read the rules and tick the box to accept the terms.");
+    // A bot filling this form would create hotels without end.
+    const ip = (await headers()).get("x-forwarded-for")?.split(",")[0].trim() ?? "unknown";
+    if (await overLimit(`signup:${ip}`, 10)) throw new UserError("Too many sign-ups from this connection. Please try again in an hour.");
+    await noteTry(`signup:${ip}`, 60 * 60 * 1000);
     const { owner, hotel } = await newHotel(fd);
     // Keeps proof of when the owner accepted the terms shown on the signup page.
     await platformAudit(owner.id, "accept_terms", hotel.id);

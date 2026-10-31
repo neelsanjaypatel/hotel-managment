@@ -119,14 +119,26 @@ export const users = pgTable("users", {
   employeeId: integer("employee_id"),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => [index("users_hotel").on(t.hotelId)]);
 
-export const sessions = pgTable("sessions", {
-  id: text("id").primaryKey(), // sha256 of the cookie token
-  userId: integer("user_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
-  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+export const sessions = pgTable(
+  "sessions",
+  {
+    id: text("id").primaryKey(), // sha256 of the cookie token
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [index("sessions_user").on(t.userId)],
+);
+
+// Wrong-password and sign-up counters. In the database because a serverless app runs on many
+// instances at once and a counter in one instance's memory would not stop anything.
+export const rateLimits = pgTable("rate_limits", {
+  key: text("key").primaryKey(),
+  count: integer("count").notNull(),
+  until: timestamp("until", { withTimezone: true }).notNull(),
 });
 
 export const employees = pgTable(
@@ -254,7 +266,7 @@ export const sales = pgTable(
       .references(() => users.id),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("sales_hotel_date").on(t.hotelId, t.date)],
+  (t) => [index("sales_hotel_date").on(t.hotelId, t.date), index("sales_party").on(t.partyId), index("sales_booking").on(t.bookingId)],
 );
 
 // Money received against a party's dues (Zomato payout, credit customer pays).
@@ -280,7 +292,7 @@ export const receipts = pgTable(
       .references(() => users.id),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("receipts_hotel_date").on(t.hotelId, t.date)],
+  (t) => [index("receipts_hotel_date").on(t.hotelId, t.date), index("receipts_party").on(t.partyId), index("receipts_booking").on(t.bookingId)],
 );
 
 // People we buy from (dairy, grocery, gas...). Purchases are expenses with supplier_id;
@@ -315,7 +327,7 @@ export const supplierPayments = pgTable(
       .references(() => users.id),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("supplier_payments_hotel_date").on(t.hotelId, t.date)],
+  (t) => [index("supplier_payments_hotel_date").on(t.hotelId, t.date), index("supplier_payments_supplier").on(t.supplierId)],
 );
 
 export const expenseCategories = pgTable("expense_categories", {
@@ -352,7 +364,7 @@ export const expenses = pgTable(
       .references(() => users.id),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("expenses_hotel_date").on(t.hotelId, t.date)],
+  (t) => [index("expenses_hotel_date").on(t.hotelId, t.date), index("expenses_supplier").on(t.supplierId)],
 );
 
 // Advance to an employee; recovered from that month's salary.
@@ -511,7 +523,7 @@ export const auditLog = pgTable("audit_log", {
   entityId: text("entity_id"),
   data: jsonb("data"),
   at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => [index("audit_log_hotel_at").on(t.hotelId, t.at)]);
 
 export type Role = (typeof roleEnum.enumValues)[number];
 export type SaleMode = (typeof saleModeEnum.enumValues)[number];

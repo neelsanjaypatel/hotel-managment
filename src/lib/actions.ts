@@ -7,7 +7,7 @@ import { z } from "zod";
 import { getDb, schema } from "@/db";
 import { getUser, hashPassword, keepOnlyThisSession, login, loginLocked, logout, requireAction, verifyPassword, type HotelUser } from "./auth";
 import { addDays, isISODate, toPaise, todayIST, PAID_MODES } from "./format";
-import { UserError, amount, audit, checkEntryDate, fail, isUniqueViolation, ok, owned, run, str, type FormState } from "./action-helpers";
+import { UserError, amount, audit, checkEntryDate, fail, isUniqueViolation, lockHotel, ok, onOpenDay, owned, run, str, type FormState, type Tx } from "./action-helpers";
 import type { AttendanceStatus } from "@/db/schema";
 
 export type { FormState } from "./action-helpers";
@@ -18,7 +18,7 @@ export async function loginAction(_: FormState, fd: FormData): Promise<FormState
   const loginId = String(fd.get("login") ?? "");
   const result = await login(loginId, String(fd.get("password") ?? ""));
   if (result === "google") return fail("This owner login uses Google. Tap Continue with Google above.");
-  if (result === "wrong") return fail(loginLocked(loginId) ? "Too many wrong tries. Please wait 15 minutes." : "Wrong login or password.");
+  if (result === "wrong") return fail((await loginLocked(loginId)) ? "Too many wrong tries. Please wait 15 minutes." : "Wrong login or password.");
   redirect("/");
 }
 
@@ -115,8 +115,9 @@ export async function addSale(_: FormState, fd: FormData): Promise<FormState> {
     const user = await requireAction("enterCounter");
     const date = await checkEntryDate(user, fd.get("date"));
     const values = await parseSale(user, fd);
-    const db = await getDb();
-    const [row] = await db.insert(schema.sales).values({ hotelId: user.hotelId, date, ...values, createdBy: user.id }).returning();
+    const [row] = await onOpenDay(user, date, (tx) =>
+      tx.insert(schema.sales).values({ hotelId: user.hotelId, date, ...values, createdBy: user.id }).returning(),
+    );
     await audit(user, "create", "sale", row.id, row);
     revalidatePath("/", "layout");
     return ok("Sale added.");
@@ -128,8 +129,9 @@ export async function addExpense(_: FormState, fd: FormData): Promise<FormState>
     const user = await requireAction("enterCounter");
     const date = await checkEntryDate(user, fd.get("date"));
     const values = await parseExpense(user, fd);
-    const db = await getDb();
-    const [row] = await db.insert(schema.expenses).values({ hotelId: user.hotelId, date, ...values, createdBy: user.id }).returning();
+    const [row] = await onOpenDay(user, date, (tx) =>
+      tx.insert(schema.expenses).values({ hotelId: user.hotelId, date, ...values, createdBy: user.id }).returning(),
+    );
     await audit(user, "create", "expense", row.id, row);
     revalidatePath("/", "layout");
     return ok("Expense added.");
@@ -141,8 +143,9 @@ export async function addAdvance(_: FormState, fd: FormData): Promise<FormState>
     const user = await requireAction("enterCounter");
     const date = await checkEntryDate(user, fd.get("date"));
     const values = await parseAdvance(user, fd);
-    const db = await getDb();
-    const [row] = await db.insert(schema.advances).values({ hotelId: user.hotelId, date, ...values, createdBy: user.id }).returning();
+    const [row] = await onOpenDay(user, date, (tx) =>
+      tx.insert(schema.advances).values({ hotelId: user.hotelId, date, ...values, createdBy: user.id }).returning(),
+    );
     await audit(user, "create", "advance", row.id, row);
     revalidatePath("/", "layout");
     return ok("Advance recorded. It will be deducted from salary.");
@@ -154,8 +157,9 @@ export async function addReceipt(_: FormState, fd: FormData): Promise<FormState>
     const user = await requireAction("enterCounter");
     const date = await checkEntryDate(user, fd.get("date"));
     const values = await parseReceipt(user, fd);
-    const db = await getDb();
-    const [row] = await db.insert(schema.receipts).values({ hotelId: user.hotelId, date, ...values, createdBy: user.id }).returning();
+    const [row] = await onOpenDay(user, date, (tx) =>
+      tx.insert(schema.receipts).values({ hotelId: user.hotelId, date, ...values, createdBy: user.id }).returning(),
+    );
     await audit(user, "create", "receipt", row.id, row);
     revalidatePath("/", "layout");
     return ok("Payment received recorded.");
@@ -204,8 +208,7 @@ export async function deleteEntry(kind: keyof typeof ENTRY_TABLES, id: number): 
         throw new UserError("This entry belongs to a closed booking and cannot be deleted here.");
       }
     }
-    await checkEntryDate(user, row.date);
-    await db.delete(table).where(where);
+    await onOpenDay(user, await checkEntryDate(user, row.date), (tx) => tx.delete(table).where(where));
     await audit(user, "delete", kind, id, row);
     revalidatePath("/", "layout");
     return ok("Entry deleted.");
@@ -225,7 +228,7 @@ export async function updateEntry(kind: keyof typeof ENTRY_TABLES, id: number, _
     if (!before) throw new UserError("Entry not found.");
     if (user.role !== "admin" && before.createdBy !== user.id) throw new UserError("You can change only your own entries.");
     if ("bookingId" in before && before.bookingId) throw new UserError("This entry belongs to a booking. Change it from the booking.");
-    await checkEntryDate(user, before.date);
+    const date = await checkEntryDate(user, before.date);
     const values =
       kind === "sale"
         ? await parseSale(user, fd)
@@ -239,7 +242,7 @@ export async function updateEntry(kind: keyof typeof ENTRY_TABLES, id: number, _
                 ? parseTransfer(fd)
                 : parsePaid(fd);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const [after] = await db.update(table).set(values as any).where(where).returning();
+    const [after] = await onOpenDay(user, date, (tx) => tx.update(table).set(values as any).where(where).returning());
     await audit(user, "update", kind, id, { before, after });
     revalidatePath("/", "layout");
     return ok("Entry updated.");
@@ -254,24 +257,31 @@ export async function closeDay(_: FormState, fd: FormData): Promise<FormState> {
     if (counted == null) throw new UserError("Enter the cash counted in the drawer.");
     const deposit = toPaise(fd.get("cashDeposit") || "0") ?? 0;
     const db = await getDb();
-    await db
-      .update(schema.dayBooks)
-      .set({ countedCash: counted, cashDeposit: deposit, status: "closed", closedBy: user.id, closedAt: new Date(), note: str(fd, "note") })
-      .where(and(eq(schema.dayBooks.hotelId, user.hotelId), eq(schema.dayBooks.date, date)));
-    // The next day's opening cash was copied when that day was first opened; if this day
-    // is closed after that (late close, or reopened and re-closed) carry the new count forward.
-    const [next] = await db
-      .select()
-      .from(schema.dayBooks)
-      .where(and(eq(schema.dayBooks.hotelId, user.hotelId), gt(schema.dayBooks.date, date)))
-      .orderBy(asc(schema.dayBooks.date))
-      .limit(1);
-    if (next && next.openingCash !== counted) {
-      await db
+    const thisDay = and(eq(schema.dayBooks.hotelId, user.hotelId), eq(schema.dayBooks.date, date));
+    const next = await db.transaction(async (tx) => {
+      // Waits for entries still being saved; a second manager closing at once stops here.
+      const [day] = await tx.select({ status: schema.dayBooks.status }).from(schema.dayBooks).where(thisDay).for("update");
+      if (day?.status !== "open") throw new UserError("This day is already closed.");
+      await tx
         .update(schema.dayBooks)
-        .set({ openingCash: counted })
-        .where(and(eq(schema.dayBooks.hotelId, user.hotelId), eq(schema.dayBooks.date, next.date)));
-    }
+        .set({ countedCash: counted, cashDeposit: deposit, status: "closed", closedBy: user.id, closedAt: new Date(), note: str(fd, "note") })
+        .where(thisDay);
+      // The next day's opening cash was copied when that day was first opened; if this day
+      // is closed after that (late close, or reopened and re-closed) carry the new count forward.
+      const [following] = await tx
+        .select()
+        .from(schema.dayBooks)
+        .where(and(eq(schema.dayBooks.hotelId, user.hotelId), gt(schema.dayBooks.date, date)))
+        .orderBy(asc(schema.dayBooks.date))
+        .limit(1);
+      if (following && following.openingCash !== counted) {
+        await tx
+          .update(schema.dayBooks)
+          .set({ openingCash: counted })
+          .where(and(eq(schema.dayBooks.hotelId, user.hotelId), eq(schema.dayBooks.date, following.date)));
+      }
+      return following;
+    });
     await audit(user, "close_day", "day", date, { counted, deposit, nextDay: next?.date, nextOpeningWas: next?.openingCash });
     revalidatePath("/", "layout");
     return ok(next && next.openingCash !== counted ? `Day closed. Opening cash of ${next.date} updated to match.` : "Day closed.");
@@ -328,7 +338,7 @@ export async function saveAttendance(_: FormState, fd: FormData): Promise<FormSt
     if (user.role !== "admin" && date < addDays(todayIST(), -1)) {
       throw new UserError("Managers can mark only today and yesterday.");
     }
-    const ids = fd.getAll("employeeId").map(Number).filter(Boolean);
+    const ids = [...new Set(fd.getAll("employeeId").map(Number).filter(Boolean))];
     const db = await getDb();
     // Only this hotel's employees; managers only the workers assigned to them.
     const allowed = await db
@@ -342,21 +352,23 @@ export async function saveAttendance(_: FormState, fd: FormData): Promise<FormSt
         ),
       );
     const allowedSet = new Set(allowed.map((a) => a.id));
-    let n = 0;
-    for (const id of ids) {
-      if (!allowedSet.has(id)) continue;
+    const rows = ids.flatMap((id) => {
       const status = fd.get(`s_${id}`) as AttendanceStatus | null;
-      if (!status || !schema.attendanceEnum.enumValues.includes(status)) continue;
+      if (!allowedSet.has(id) || !status || !schema.attendanceEnum.enumValues.includes(status)) return [];
       const otHours = Math.max(0, Math.min(16, Number(fd.get(`ot_${id}`)) || 0));
+      return [{ hotelId: user.hotelId, employeeId: id, date, status, otHours, markedBy: user.id }];
+    });
+    // One statement, so a big staff list does not cost one round trip per person.
+    if (rows.length) {
       await db
         .insert(schema.attendance)
-        .values({ hotelId: user.hotelId, employeeId: id, date, status, otHours, markedBy: user.id })
+        .values(rows)
         .onConflictDoUpdate({
           target: [schema.attendance.employeeId, schema.attendance.date],
-          set: { status, otHours, markedBy: user.id, markedAt: new Date() },
+          set: { status: sql`excluded.status`, otHours: sql`excluded.ot_hours`, markedBy: user.id, markedAt: new Date() },
         });
-      n++;
     }
+    const n = rows.length;
     await audit(user, "mark_attendance", "attendance", date, { count: n });
     revalidatePath("/", "layout");
     return ok(`Attendance saved for ${n} ${n === 1 ? "person" : "people"}.`);
@@ -365,19 +377,19 @@ export async function saveAttendance(_: FormState, fd: FormData): Promise<FormSt
 
 // ---------- master data (hotel admin) ----------
 
-async function planLimits(user: HotelUser) {
-  const db = await getDb();
-  const [plan] = await db.select().from(schema.plans).where(eq(schema.plans.id, user.hotel.planId));
-  return plan;
-}
-
-async function countWhere(table: typeof schema.employees | typeof schema.users, hotelId: number) {
-  const db = await getDb();
-  const [r] = await db
+// Run inside the transaction that adds the employee or login, so two adds at once cannot both
+// take the last slot on the plan.
+async function needSlot(tx: Tx, user: HotelUser, kind: "employees" | "logins") {
+  await lockHotel(tx, user.hotelId);
+  const [plan] = await tx.select().from(schema.plans).where(eq(schema.plans.id, user.hotel.planId));
+  const limit = kind === "employees" ? plan?.maxEmployees : plan?.maxUsers;
+  if (limit == null) return;
+  const table = kind === "employees" ? schema.employees : schema.users;
+  const [r] = await tx
     .select({ n: sql<number>`count(*)::int` })
     .from(table)
-    .where(and(eq(table.hotelId, hotelId), eq(table.active, true)));
-  return r.n;
+    .where(and(eq(table.hotelId, user.hotelId), eq(table.active, true)));
+  if (r.n >= limit) throw new UserError(`Your ${plan.name} plan allows ${limit} ${kind}. Upgrade from Billing to add more.`);
 }
 
 const employeeSchema = z.object({
@@ -403,12 +415,7 @@ export async function saveEmployee(_: FormState, fd: FormData): Promise<FormStat
     const id = Number(fd.get("id")) || null;
     const existing = id ? await owned(schema.employees, id, user.hotelId, "employee") : null;
     // New employee, or an inactive one being made active again, takes a plan slot.
-    if (active && (!existing || !existing.active)) {
-      const plan = await planLimits(user);
-      if (plan?.maxEmployees != null && (await countWhere(schema.employees, user.hotelId)) >= plan.maxEmployees) {
-        throw new UserError(`Your ${plan.name} plan allows ${plan.maxEmployees} employees. Upgrade from Billing to add more.`);
-      }
-    }
+    const takesSlot = active && (!existing || !existing.active);
     // A changed salary applies from the chosen date; earlier months keep the old rate.
     const rateFrom = fd.get("rateFrom");
     const rateChanged = !!existing && existing.rate !== rate;
@@ -420,6 +427,7 @@ export async function saveEmployee(_: FormState, fd: FormData): Promise<FormStat
     try {
       if (id) {
         await db.transaction(async (tx) => {
+          if (takesSlot) await needSlot(tx, user, "employees");
           await tx.update(schema.employees).set(values).where(and(eq(schema.employees.id, id), eq(schema.employees.hotelId, user.hotelId)));
           if (rateChanged) {
             // Employees saved before salary history existed have no rows yet: record the
@@ -437,6 +445,7 @@ export async function saveEmployee(_: FormState, fd: FormData): Promise<FormStat
         await audit(user, "update", "employee", id, { before: existing, after: { ...values, rate, rateFrom: rateChanged ? rateFrom : undefined } });
       } else {
         const row = await db.transaction(async (tx) => {
+          if (takesSlot) await needSlot(tx, user, "employees");
           const [r] = await tx.insert(schema.employees).values({ ...values, hotelId: user.hotelId }).returning();
           await tx.insert(schema.employeeRates).values({ hotelId: user.hotelId, employeeId: r.id, fromDate: p.data.joinDate, rate });
           return r;
@@ -466,16 +475,17 @@ export async function saveUser(_: FormState, fd: FormData): Promise<FormState> {
     const employeeId = Number(fd.get("employeeId")) || null;
     if (role.data === "employee" && !employeeId) throw new UserError("Employee logins must be linked to an employee.");
     if (employeeId) await owned(schema.employees, employeeId, admin.hotelId, "employee");
-    const plan = await planLimits(admin);
-    if (plan?.maxUsers != null && (await countWhere(schema.users, admin.hotelId)) >= plan.maxUsers) {
-      throw new UserError(`Your ${plan.name} plan allows ${plan.maxUsers} logins. Upgrade from Billing to add more.`);
-    }
     const db = await getDb();
+    const passwordHash = await hashPassword(password);
     try {
-      const [row] = await db
-        .insert(schema.users)
-        .values({ hotelId: admin.hotelId, name, login: loginId, role: role.data, employeeId, passwordHash: await hashPassword(password) })
-        .returning({ id: schema.users.id });
+      const row = await db.transaction(async (tx) => {
+        await needSlot(tx, admin, "logins");
+        const [r] = await tx
+          .insert(schema.users)
+          .values({ hotelId: admin.hotelId, name, login: loginId, role: role.data, employeeId, passwordHash })
+          .returning({ id: schema.users.id });
+        return r;
+      });
       await audit(admin, "create", "user", row.id, { name, login: loginId, role: role.data });
     } catch (e) {
       if (isUniqueViolation(e)) throw new UserError("That login is already taken. Try a phone number.");
@@ -491,14 +501,11 @@ export async function setUserActive(userId: number, active: boolean): Promise<Fo
     const admin = await requireAction("manageMaster");
     if (userId === admin.id) throw new UserError("You cannot disable your own login.");
     const target = await owned(schema.users, userId, admin.hotelId, "login");
-    if (active && !target.active) {
-      const plan = await planLimits(admin);
-      if (plan?.maxUsers != null && (await countWhere(schema.users, admin.hotelId)) >= plan.maxUsers) {
-        throw new UserError(`Your ${plan.name} plan allows ${plan.maxUsers} logins. Upgrade from Billing to add more.`);
-      }
-    }
     const db = await getDb();
-    await db.update(schema.users).set({ active }).where(and(eq(schema.users.id, userId), eq(schema.users.hotelId, admin.hotelId)));
+    await db.transaction(async (tx) => {
+      if (active && !target.active) await needSlot(tx, admin, "logins");
+      await tx.update(schema.users).set({ active }).where(and(eq(schema.users.id, userId), eq(schema.users.hotelId, admin.hotelId)));
+    });
     if (!active) await db.delete(schema.sessions).where(eq(schema.sessions.userId, userId));
     await audit(admin, active ? "enable" : "disable", "user", userId);
     revalidatePath("/settings");
@@ -586,9 +593,8 @@ function shareBp(fd: FormData) {
   return bp;
 }
 
-async function activeShareTotal(hotelId: number, exceptId?: number) {
-  const db = await getDb();
-  const rows = await db
+async function activeShareTotal(tx: Tx, hotelId: number, exceptId?: number) {
+  const rows = await tx
     .select({ id: schema.partners.id, bp: schema.partners.shareBp })
     .from(schema.partners)
     .where(and(eq(schema.partners.hotelId, hotelId), eq(schema.partners.active, true)));
@@ -605,19 +611,22 @@ export async function savePartner(_: FormState, fd: FormData): Promise<FormState
     if (id) await owned(schema.partners, id, admin.hotelId, "partner");
     const userId = Number(fd.get("userId")) || null;
     if (userId) await owned(schema.users, userId, admin.hotelId, "login");
-    const others = await activeShareTotal(admin.hotelId, id ?? undefined);
-    if (others + bp > 10000) {
-      throw new UserError(`Shares would add up to ${(others + bp) / 100}%. Total cannot be more than 100%.`);
-    }
     const values = { name, phone: str(fd, "phone"), shareBp: bp, userId };
     const db = await getDb();
-    if (id) {
-      await db.update(schema.partners).set(values).where(and(eq(schema.partners.id, id), eq(schema.partners.hotelId, admin.hotelId)));
-      await audit(admin, "update", "partner", id, values);
-    } else {
-      const [row] = await db.insert(schema.partners).values({ ...values, hotelId: admin.hotelId }).returning();
-      await audit(admin, "create", "partner", row.id, values);
-    }
+    const saved = await db.transaction(async (tx) => {
+      await lockHotel(tx, admin.hotelId);
+      const others = await activeShareTotal(tx, admin.hotelId, id ?? undefined);
+      if (others + bp > 10000) {
+        throw new UserError(`Shares would add up to ${(others + bp) / 100}%. Total cannot be more than 100%.`);
+      }
+      if (id) {
+        await tx.update(schema.partners).set(values).where(and(eq(schema.partners.id, id), eq(schema.partners.hotelId, admin.hotelId)));
+        return id;
+      }
+      const [row] = await tx.insert(schema.partners).values({ ...values, hotelId: admin.hotelId }).returning();
+      return row.id;
+    });
+    await audit(admin, id ? "update" : "create", "partner", saved, values);
     revalidatePath("/", "layout");
     return ok(id ? "Partner updated." : "Partner added.");
   });
@@ -665,11 +674,9 @@ export async function paySupplier(_: FormState, fd: FormData): Promise<FormState
     const supplierId = Number(fd.get("supplierId"));
     await owned(schema.suppliers, supplierId, user.hotelId, "supplier");
     const date = await checkEntryDate(user, todayIST());
-    const db = await getDb();
-    const [row] = await db
-      .insert(schema.supplierPayments)
-      .values({ hotelId: user.hotelId, supplierId, date, ...parsePaid(fd), createdBy: user.id })
-      .returning();
+    const [row] = await onOpenDay(user, date, (tx) =>
+      tx.insert(schema.supplierPayments).values({ hotelId: user.hotelId, supplierId, date, ...parsePaid(fd), createdBy: user.id }).returning(),
+    );
     await audit(user, "create", "supplier", row.id, row);
     revalidatePath("/", "layout");
     return ok("Payment to supplier recorded.");
@@ -682,11 +689,9 @@ export async function addDrawing(_: FormState, fd: FormData): Promise<FormState>
     const partnerId = Number(fd.get("partnerId"));
     await owned(schema.partners, partnerId, admin.hotelId, "partner");
     const date = await checkEntryDate(admin, todayIST());
-    const db = await getDb();
-    const [row] = await db
-      .insert(schema.partnerDrawings)
-      .values({ hotelId: admin.hotelId, partnerId, date, ...parsePaid(fd), createdBy: admin.id })
-      .returning();
+    const [row] = await onOpenDay(admin, date, (tx) =>
+      tx.insert(schema.partnerDrawings).values({ hotelId: admin.hotelId, partnerId, date, ...parsePaid(fd), createdBy: admin.id }).returning(),
+    );
     await audit(admin, "create", "drawing", row.id, row);
     revalidatePath("/", "layout");
     return ok("Withdrawal recorded.");
@@ -697,11 +702,9 @@ export async function addTransfer(_: FormState, fd: FormData): Promise<FormState
   return run(async () => {
     const user = await requireAction("enterCounter");
     const date = await checkEntryDate(user, fd.get("date"));
-    const db = await getDb();
-    const [row] = await db
-      .insert(schema.cashTransfers)
-      .values({ hotelId: user.hotelId, date, ...parseTransfer(fd), createdBy: user.id })
-      .returning();
+    const [row] = await onOpenDay(user, date, (tx) =>
+      tx.insert(schema.cashTransfers).values({ hotelId: user.hotelId, date, ...parseTransfer(fd), createdBy: user.id }).returning(),
+    );
     await audit(user, "create", "transfer", row.id, row);
     revalidatePath("/", "layout");
     return ok(row.direction === "to_bank" ? "Cash moved to bank." : "Cash drawn from bank.");

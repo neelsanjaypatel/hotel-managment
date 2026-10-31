@@ -43,7 +43,7 @@ export default async function SummaryPage({ searchParams }: PageProps<"/summary"
     rangeTotals(h, today, today, db),
     // Advances taken for bookings that have not happened yet: the customer's money.
     db
-      .select({ total: sql<number>`coalesce(sum(${schema.receipts.amount}), 0)::int` })
+      .select({ total: sql<number>`coalesce(sum(${schema.receipts.amount}), 0)::float8` })
       .from(schema.receipts)
       .innerJoin(schema.bookings, eq(schema.bookings.id, schema.receipts.bookingId))
       .where(and(eq(schema.receipts.hotelId, h), inArray(schema.bookings.status, ["tentative", "confirmed"]))),

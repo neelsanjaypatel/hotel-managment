@@ -22,7 +22,7 @@ export default async function SlipPage({ params }: PageProps<"/bookings/[id]/sli
   if (!row || row.b.status === "cancelled") notFound();
   const { b, party } = row;
   const [{ received }] = await db
-    .select({ received: sql<number>`coalesce(sum(${receipts.amount}), 0)::int` })
+    .select({ received: sql<number>`coalesce(sum(${receipts.amount}), 0)::float8` })
     .from(receipts)
     .where(and(eq(receipts.hotelId, user.hotelId), eq(receipts.bookingId, b.id)));
   const h = user.hotel;

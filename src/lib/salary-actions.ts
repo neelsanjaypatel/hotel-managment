@@ -3,11 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
-import { getDb, schema } from "@/db";
+import { getDb, schema, type DB } from "@/db";
 import { requireAction } from "./auth";
 import { isMonth, prettyMonth, rupees, todayIST, PAID_MODES } from "./format";
 import { monthPayroll } from "./payroll";
-import { UserError, amount, audit, checkEntryDate, ok, owned, run, str, type FormState } from "./action-helpers";
+import { UserError, amount, assertDayOpen, audit, checkEntryDate, lockHotel, ok, onOpenDay, owned, run, str, type FormState } from "./action-helpers";
 
 function payMode(fd: FormData) {
   const m = z.enum(PAID_MODES).safeParse(fd.get("paidVia"));
@@ -29,11 +29,12 @@ export async function paySalary(_: FormState, fd: FormData): Promise<FormState> 
     const employeeId = Number(fd.get("employeeId"));
     const emp = await owned(schema.employees, employeeId, user.hotelId, "employee");
     const date = await checkEntryDate(user, todayIST());
-    const db = await getDb();
-    const [row] = await db
-      .insert(schema.salaryPayments)
-      .values({ hotelId: user.hotelId, employeeId, month, date, amount: amount(fd), paidVia: payMode(fd), note: str(fd, "note"), createdBy: user.id })
-      .returning();
+    const [row] = await onOpenDay(user, date, (tx) =>
+      tx
+        .insert(schema.salaryPayments)
+        .values({ hotelId: user.hotelId, employeeId, month, date, amount: amount(fd), paidVia: payMode(fd), note: str(fd, "note"), createdBy: user.id })
+        .returning(),
+    );
     await audit(user, "create", "salary", row.id, row);
     revalidatePath("/", "layout");
     return ok(`Paid ${rupees(row.amount)} to ${emp.name} for ${prettyMonth(month)}.`);
@@ -48,20 +49,24 @@ export async function payAllSalaries(_: FormState, fd: FormData): Promise<FormSt
     const paidVia = payMode(fd);
     const date = await checkEntryDate(user, todayIST());
     const db = await getDb();
-    const due = (await monthPayroll(user.hotelId, month, {}, db)).filter((r) => r.net > 0);
-    if (due.length === 0) throw new UserError("Nobody has a balance left for this month.");
-    const rows = due.map((r) => ({
-      hotelId: user.hotelId,
-      employeeId: r.employee.id,
-      month,
-      date,
-      amount: r.net,
-      paidVia,
-      note: "Monthly salary",
-      createdBy: user.id,
-    }));
-    await db.transaction(async (tx) => {
-      await tx.insert(schema.salaryPayments).values(rows);
+    // The balances are worked out under the lock, so a second press finds nothing left to pay.
+    const rows = await db.transaction(async (tx) => {
+      await lockHotel(tx, user.hotelId);
+      await assertDayOpen(tx, user.hotelId, date);
+      const due = (await monthPayroll(user.hotelId, month, {}, tx as unknown as DB)).filter((r) => r.net > 0);
+      if (due.length === 0) throw new UserError("Nobody has a balance left for this month.");
+      const values = due.map((r) => ({
+        hotelId: user.hotelId,
+        employeeId: r.employee.id,
+        month,
+        date,
+        amount: r.net,
+        paidVia,
+        note: "Monthly salary",
+        createdBy: user.id,
+      }));
+      await tx.insert(schema.salaryPayments).values(values);
+      return values;
     });
     const total = rows.reduce((a, r) => a + r.amount, 0);
     await audit(user, "pay_all_salaries", "salary", month, { count: rows.length, total, paidVia });
