@@ -42,7 +42,7 @@ export async function createHotelWithDefaults(
   db: Tx,
   input: {
     hotel: Omit<typeof s.hotels.$inferInsert, "status" | "trialEndsAt">;
-    owner: { name: string; login: string; passwordHash: string };
+    owner: { name: string; login: string; passwordHash: string; email?: string; emailVerified?: boolean; googleSub?: string };
   },
 ) {
   const [hotel] = await db

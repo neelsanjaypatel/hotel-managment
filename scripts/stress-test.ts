@@ -20,8 +20,10 @@ const store = {
   set: () => {},
   delete: () => {},
 };
+const sentMail: { to: string; text: string }[] = [];
 const mocks: Record<string, unknown> = {
   "server-only": {},
+  nodemailer: { createTransport: () => ({ sendMail: async (m: { to: string; text: string }) => void sentMail.push(m) }) },
   "next/cache": { revalidatePath: () => {} },
   "next/headers": { cookies: async () => store, headers: async () => new Map([["x-forwarded-for", who.getStore() ?? "test"]]) },
   "next/navigation": {
@@ -41,6 +43,11 @@ const load = (Module as unknown as { _load: (r: string, ...a: unknown[]) => unkn
 
 // A throwaway key, for this test only.
 process.env.DATA_KEY = randomBytes(32).toString("base64");
+process.env.SMTP_USER = "test@example.com";
+process.env.SMTP_PASS = "test";
+process.env.APP_URL = "https://test.example";
+process.env.GOOGLE_CLIENT_ID = "test.apps.googleusercontent.com";
+process.env.GOOGLE_CLIENT_SECRET = "test-secret";
 
 let failed = 0;
 function check(name: string, pass: boolean, detail = "") {
@@ -335,6 +342,45 @@ async function main() {
     const added = (await h.as(() => actions.addAdvance(null, form({ date: today, employeeId: String(e.id), paidVia: "cash", recover: "monthly", amount: "2000" })))) as { ok?: string };
     const [v] = await raw<{ installment: number | null }[]>`select installment from advances where hotel_id = ${h.hotel.id} order by id desc limit 1`;
     check("Loan form asks for no installment", !!added.ok && v.installment === 0);
+  }
+
+  // ---- email: confirm, log in, forgot password ----
+  {
+    const h = await hotel("mail");
+    const other = await hotel("mailb");
+    const account = await import("../src/lib/account-actions");
+    const { openIdentity, sealIdentity } = await import("../src/lib/google");
+    const email = `Owner.${tag}@Example.com`;
+    const lower = email.toLowerCase();
+    const tokenFrom = (kind: string) => new URL(sentMail.at(-1)!.text.match(/https:\S+/)![0]).searchParams.get("token") ?? kind;
+    await h.as(() => account.setMyEmail(null, form({ email })));
+    const [u1] = await db.select().from(schema.users).where(eq(schema.users.id, h.owner.id));
+    const dup = (await other.as(() => account.setMyEmail(null, form({ email: lower })))) as { error?: string };
+    check("Email is saved unconfirmed, and two logins cannot share it", u1.email === lower && !u1.emailVerified && !!dup.error);
+    const before = sentMail.length;
+    await account.forgotPassword(null, form({ email: lower }));
+    check("No reset mail before the email is confirmed", sentMail.length === before);
+    check("Unconfirmed email cannot log in", (await who.run(`e-${tag}`, () => login(lower, "right-password"))) === "wrong");
+    const { GET: verify } = await import("../src/app/verify-email/route");
+    await h.as(() => account.setMyEmail(null, form({ email })));
+    const verifyToken = tokenFrom("verify");
+    const { NextRequest } = await import("next/server");
+    await verify(new NextRequest(`https://test.example/verify-email?token=${verifyToken}`));
+    const [u2] = await db.select().from(schema.users).where(eq(schema.users.id, h.owner.id));
+    check("Link confirms the email", u2.emailVerified);
+    check("Confirmed email can log in", (await who.run(`e2-${tag}`, () => login(email, "right-password"))) === "ok");
+    await account.forgotPassword(null, form({ email: lower }));
+    const resetToken = tokenFrom("reset");
+    check("Reset mail goes to the confirmed email", sentMail.at(-1)!.to === lower);
+    const bad = (await account.resetWithToken(null, form({ token: "nope", password: "new-pass-123", confirm: "new-pass-123" }))) as { error?: string };
+    const good = (await account.resetWithToken(null, form({ token: resetToken, password: "new-pass-123", confirm: "new-pass-123" }))) as { ok?: string };
+    const again = (await account.resetWithToken(null, form({ token: resetToken, password: "other-pass-1", confirm: "other-pass-1" }))) as { error?: string };
+    check("Reset link works once, a made-up one never", !!bad.error && !!good.ok && !!again.error);
+    check("New password logs in, old one does not", (await who.run(`e3-${tag}`, () => login(email, "new-pass-123"))) === "ok" && (await who.run(`e4-${tag}`, () => login(h.owner.login, "right-password"))) === "wrong");
+    const sealed = sealIdentity({ sub: "g-1", email: "a@b.co" });
+    const [body, mac] = sealed.split(".");
+    const forged = `${Buffer.from(JSON.stringify({ sub: "g-2", email: "x@y.co", exp: Date.now() + 9e5 })).toString("base64url")}.${mac}`;
+    check("Google signup proof cannot be forged", openIdentity(sealed)?.sub === "g-1" && openIdentity(forged) === null && !!body);
   }
 
   // ---- entries racing the day close ----

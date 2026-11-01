@@ -240,3 +240,7 @@ Aadhaar numbers are encrypted with `DATA_KEY`, 32 random bytes in base64, set in
     openssl rand -base64 32
 
 Keep a safe copy. Without this key stored numbers cannot be read; the rest of the app keeps working. Staff and bill photos are shrunk in the browser and stored in the `attachments` table, served only through `/files/[id]`.
+
+## Email recovery
+
+Set `SMTP_USER` (a Gmail address) and `SMTP_PASS` (its Google App Password) in the server environment. People add and confirm an email in My account or at signup; a confirmed email can log in and receive a reset link. Without these variables the app keeps working and the forgot page says email reset is off.

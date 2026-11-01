@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useActionState, useTransition } from "react";
 import { signupAction } from "@/lib/platform-actions";
 
-export function SignupForm() {
+export function SignupForm({ googleEmail }: { googleEmail?: string }) {
   const [state, action, pending] = useActionState(signupAction, null);
   const [, startTransition] = useTransition();
   return (
@@ -40,10 +40,20 @@ export function SignupForm() {
         <span className="label">Mobile number (this is your login)</span>
         <input name="login" className="field" required inputMode="numeric" pattern="[6-9][0-9]{9}" maxLength={10} autoComplete="tel-national" />
       </label>
-      <label className="block">
-        <span className="label">Password (8+ characters)</span>
-        <input name="password" type="password" className="field" required minLength={8} autoComplete="new-password" />
-      </label>
+      {googleEmail ? (
+        <p className="text-sm text-muted">You will log in with Google as <span className="font-medium text-ink">{googleEmail}</span>.</p>
+      ) : (
+        <>
+          <label className="block">
+            <span className="label">Email (to recover your password)</span>
+            <input name="email" type="email" className="field" required autoComplete="email" />
+          </label>
+          <label className="block">
+            <span className="label">Password (8+ characters)</span>
+            <input name="password" type="password" className="field" required minLength={8} autoComplete="new-password" />
+          </label>
+        </>
+      )}
       <label className="flex items-start gap-2 pt-1 text-sm">
         <input type="checkbox" name="agree" required className="mt-1" />
         <span>

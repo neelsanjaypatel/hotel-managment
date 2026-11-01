@@ -12,7 +12,7 @@ import { LoginForm } from "./login-form";
 export const metadata = { title: "Log in" };
 
 const GOOGLE_MESSAGE: Record<string, string> = {
-  unlinked: "This Google account is not connected to an owner login. Log in with your password, then connect Google from My account.",
+  unlinked: "This Google account is not connected to a login. Log in with your password and connect it from My account, or start a free trial.",
   failed: "Google did not finish. Please try again.",
   off: "Google login is not switched on yet. Please use your password.",
 };
@@ -40,13 +40,14 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
           {message && <p className="mt-3 text-sm text-danger">{message}</p>}
           {googleConfigured() && (
             <section className="mt-6">
-              <h2 className="label">Hotel owner</h2>
               <GoogleButton href="/auth/google">Continue with Google</GoogleButton>
             </section>
           )}
           <section className="mt-6">
-            <h2 className="label">Staff and partners</h2>
             <LoginForm />
+            <p className="mt-3 text-center text-sm">
+              <Link href="/forgot" className="font-medium text-accent">Forgot password?</Link>
+            </p>
           </section>
           <p className="mt-5 text-center text-sm text-muted">
             New hotel? <Link href="/signup" className="font-medium text-accent">Start a free trial</Link>

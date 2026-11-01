@@ -12,7 +12,7 @@ const nextConfig: NextConfig = {
     afterFiles: [],
     fallback: [],
   }),
-  serverExternalPackages: ["@electric-sql/pglite"],
+  serverExternalPackages: ["@electric-sql/pglite", "nodemailer"],
   turbopack: {
     rules: {
       "*.css": {

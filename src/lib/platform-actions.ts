@@ -7,8 +7,12 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb, schema } from "@/db";
 import { createHotelWithDefaults } from "@/db/defaults";
+import { cookies } from "next/headers";
 import { getUser, hashPassword, noteTry, overLimit, requirePlatformAction, startSession } from "./auth";
+import { openIdentity, SIGNUP_COOKIE } from "./google";
+import { normalEmail, sendVerifyMail, validEmail } from "./email-tokens";
 import { addDays, toPaise, todayIST } from "./format";
+import { randomBytes } from "node:crypto";
 import { extendPeriod } from "./subscription";
 import { UserError, isUniqueViolation, ok, run, type FormState } from "./action-helpers";
 
@@ -29,7 +33,11 @@ function units(fd: FormData) {
   return u;
 }
 
-async function newHotel(fd: FormData, planId?: number) {
+async function newHotel(fd: FormData, planId?: number, google?: { sub: string; email: string } | null) {
+  // Someone who came through Google never types a password; a random one can never be guessed.
+  if (google) fd.set("password", randomBytes(24).toString("base64url"));
+  const email = google ? google.email.toLowerCase() : normalEmail(fd.get("email"));
+  if (email && !validEmail(email)) throw new UserError("Enter a valid email.");
   const p = hotelSchema.safeParse(Object.fromEntries(fd));
   if (!p.success) throw new UserError(p.error.issues[0].message);
   const db = await getDb();
@@ -45,12 +53,12 @@ async function newHotel(fd: FormData, planId?: number) {
     return await db.transaction((tx) =>
       createHotelWithDefaults(tx, {
         hotel: { name: p.data.hotelName, city: p.data.city, phone: p.data.login, planId: plan.id, ...hotelUnits },
-        owner: { name: p.data.ownerName, login: p.data.login, passwordHash },
+        owner: { name: p.data.ownerName, login: p.data.login, passwordHash, email: email || undefined, emailVerified: !!google, googleSub: google?.sub },
       }),
     );
   } catch (e) {
     // Two sign-ups with the same number at once: the second hits the unique login index.
-    if (isUniqueViolation(e)) throw new UserError("This mobile number already has an account. Log in instead.");
+    if (isUniqueViolation(e)) throw new UserError("This mobile number or email already has an account. Log in instead.");
     throw e;
   }
 }
@@ -64,7 +72,11 @@ export async function signupAction(_: FormState, fd: FormData): Promise<FormStat
     const ip = (await headers()).get("x-forwarded-for")?.split(",")[0].trim() ?? "unknown";
     if (await overLimit(`signup:${ip}`, 10)) throw new UserError("Too many sign-ups from this connection. Please try again in an hour.");
     await noteTry(`signup:${ip}`, 60 * 60 * 1000);
-    const { owner, hotel } = await newHotel(fd);
+    const store = await cookies();
+    const google = openIdentity(store.get(SIGNUP_COOKIE)?.value);
+    const { owner, hotel } = await newHotel(fd, undefined, google);
+    if (google) store.delete(SIGNUP_COOKIE);
+    if (owner.email && !google) await sendVerifyMail(owner.id, owner.email);
     // Keeps proof of when the owner accepted the terms shown on the signup page.
     await platformAudit(owner.id, "accept_terms", hotel.id);
     await startSession(owner.id);

@@ -9,12 +9,16 @@ import { TRIAL_DAYS } from "@/db/defaults";
 import { PHOTOS } from "@/lib/photos";
 import { RULES_AT_A_GLANCE } from "@/lib/rules";
 import { display, Mark } from "@/components/public-chrome";
+import { cookies } from "next/headers";
+import { GoogleButton } from "@/components/google-button";
+import { googleConfigured, openIdentity, SIGNUP_COOKIE } from "@/lib/google";
 import { SignupForm } from "./signup-form";
 
 export const metadata = { title: "Start free trial" };
 
 export default async function SignupPage() {
   if (await getUser()) redirect("/");
+  const google = openIdentity((await cookies()).get(SIGNUP_COOKIE)?.value);
   const db = await getDb();
   const plans = await db.select().from(schema.plans).where(eq(schema.plans.active, true)).orderBy(schema.plans.priceMonthly);
   return (
@@ -59,7 +63,12 @@ export default async function SignupPage() {
           </Link>
         </div>
         <p className="mt-1 mb-6 text-sm text-muted">You become the owner login. Add managers, cashiers and partners after this.</p>
-        <SignupForm />
+        {googleConfigured() && !google && (
+          <div className="mb-4">
+            <GoogleButton href="/auth/google?mode=signup">Continue with Google</GoogleButton>
+          </div>
+        )}
+        <SignupForm googleEmail={google?.email} />
 
         <section id="rules" className="mt-10 scroll-mt-6">
           <h3 className="text-xs font-semibold uppercase tracking-widest text-muted">The rules, in short</h3>

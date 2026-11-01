@@ -16,7 +16,7 @@ export function LoginForm() {
       }}
       className="space-y-3 rounded-xl border border-line bg-surface p-5">
       <label className="block">
-        <span className="label">Login (phone or username)</span>
+        <span className="label">Mobile, username or email</span>
         <input name="login" className="field" autoComplete="username" required autoFocus />
       </label>
       <label className="block">

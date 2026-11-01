@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
 import { getUser } from "@/lib/auth";
 import { changeMyPassword } from "@/lib/actions";
+import { setMyEmail } from "@/lib/account-actions";
+import { mailConfigured } from "@/lib/mail";
 import { googleConfigured } from "@/lib/google";
 import { Card, PageHeader } from "@/components/ui";
 import { ActionForm, Input } from "@/components/forms";
@@ -12,26 +14,26 @@ const GOOGLE_MESSAGE: Record<string, string> = {
   connected: "Google connected. From now on, log in with Google.",
   failed: "Google did not finish. Please try again.",
   taken: "That Google account is already connected to another login.",
-  owners: "Only owner logins can use Google.",
 };
 
 // Every login, including staff of a suspended hotel, can change their own password.
-// Owners can connect Google instead; after that the password no longer works.
+// Anyone can connect Google instead; after that the password no longer works.
 export default async function AccountPage({ searchParams }: PageProps<"/account">) {
   const user = await getUser();
   if (!user) redirect("/login");
-  const { google } = await searchParams;
-  const message = typeof google === "string" ? GOOGLE_MESSAGE[google] : undefined;
-  const owner = user.role === "admin" || user.role === "superadmin";
+  const { google, email } = await searchParams;
+  const message =
+    (typeof google === "string" ? GOOGLE_MESSAGE[google] : undefined) ??
+    (email === "confirmed" ? "Email confirmed. You can use it to log in or reset your password." : email === "expired" ? "That link has expired. Save your email again for a new one." : undefined);
   return (
     <>
       <PageHeader title="My account" sub={user.name} />
       {message && <p className="mb-4 max-w-md text-sm font-medium">{message}</p>}
-      {owner && (user.hasGoogle || googleConfigured()) && (
+      {(user.hasGoogle || googleConfigured()) && (
         <Card title="Google login" className="mb-4 max-w-md">
           {user.hasGoogle ? (
             <p className="text-sm">
-              Connected to <span className="font-medium">{user.email}</span>. If you lose this Google account, contact Hotel Desk support.
+              Connected to <span className="font-medium">{user.email}</span>. If you lose this Google account, use Forgot password on the login page.
             </p>
           ) : (
             <>
@@ -39,6 +41,21 @@ export default async function AccountPage({ searchParams }: PageProps<"/account"
               <GoogleButton href="/auth/google?mode=connect">Connect Google</GoogleButton>
             </>
           )}
+        </Card>
+      )}
+      {!user.hasGoogle && (
+        <Card title="Recovery email" className="mb-4 max-w-md">
+          <p className="mb-3 text-sm text-muted">
+            {user.email && user.emailVerified
+              ? "Confirmed. You can log in with it, and reset your password if you forget it."
+              : user.email
+                ? "Not confirmed yet. Open the link in the mail, or save it again for a new link."
+                : "Add your email so you can reset your password yourself."}
+            {!mailConfigured() && " Email sending is not switched on yet."}
+          </p>
+          <ActionForm action={setMyEmail} submit="Save email" resetOnOk={false}>
+            <Input name="email" label="Email" type="email" autoComplete="email" defaultValue={user.email ?? ""} required />
+          </ActionForm>
         </Card>
       )}
       {!user.hasGoogle && (

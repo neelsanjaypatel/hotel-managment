@@ -3,7 +3,7 @@ import { cache } from "react";
 import { createHash, randomBytes } from "node:crypto";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { and, eq, gt, lt, ne, sql } from "drizzle-orm";
+import { and, eq, gt, lt, ne, or, sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { getDb, schema } from "@/db";
 import type { Hotel, Role } from "@/db/schema";
@@ -25,6 +25,7 @@ export type CurrentUser = {
   hotel: Hotel | null;
   access: Access | null;
   email: string | null;
+  emailVerified: boolean;
   hasGoogle: boolean;
 };
 
@@ -98,7 +99,13 @@ export async function login(loginId: string, password: string): Promise<"ok" | "
   const [u] = await db
     .select()
     .from(schema.users)
-    .where(and(eq(schema.users.login, loginId.trim()), eq(schema.users.active, true)));
+    // The login id, or an email its owner has confirmed.
+    .where(
+      and(
+        or(eq(schema.users.login, loginId.trim()), and(sql`lower(${schema.users.email}) = ${loginId.trim().toLowerCase()}`, eq(schema.users.emailVerified, true))),
+        eq(schema.users.active, true),
+      ),
+    );
   // Compare against a dummy hash when the user is missing so timing does not leak which logins exist.
   const ok = await bcrypt.compare(password, u?.passwordHash ?? (DUMMY_HASH ??= bcrypt.hashSync("-", 10)));
   if (!u || !ok) {
@@ -145,6 +152,7 @@ export const getUser = cache(async (): Promise<CurrentUser | null> => {
     hotel,
     access: hotel ? hotelAccess(hotel, todayIST()) : null,
     email: u.email,
+    emailVerified: u.emailVerified,
     hasGoogle: !!u.googleSub,
   };
 });

@@ -476,7 +476,7 @@ export async function saveEmployee(_: FormState, fd: FormData): Promise<FormStat
         await tx.insert(users).values({ ...values, hotelId: user.hotelId, employeeId, passwordHash: passwordHash! });
         return;
       }
-      await tx.update(users).set(passwordHash ? { ...values, passwordHash } : values).where(eq(users.id, linked.id));
+      await tx.update(users).set(passwordHash ? { ...values, passwordHash, googleSub: null } : values).where(eq(users.id, linked.id));
       if (passwordHash) await tx.delete(sessions).where(eq(sessions.userId, linked.id));
     };
     // A changed salary applies from the chosen date; earlier months keep the old rate.
@@ -606,7 +606,7 @@ export async function resetPassword(_: FormState, fd: FormData): Promise<FormSta
     const db = await getDb();
     await db
       .update(schema.users)
-      .set({ passwordHash: await hashPassword(password) })
+      .set({ passwordHash: await hashPassword(password), googleSub: null })
       .where(and(eq(schema.users.id, userId), eq(schema.users.hotelId, admin.hotelId)));
     await db.delete(schema.sessions).where(eq(schema.sessions.userId, userId));
     await audit(admin, "reset_password", "user", userId);
@@ -730,7 +730,7 @@ export async function savePartner(_: FormState, fd: FormData): Promise<FormState
         const [made] = await tx.insert(users).values({ ...account, hotelId: admin.hotelId, role: "partner", passwordHash: passwordHash! }).returning({ id: users.id });
         return made.id;
       }
-      await tx.update(users).set(passwordHash ? { ...account, passwordHash } : account).where(eq(users.id, linked.id));
+      await tx.update(users).set(passwordHash ? { ...account, passwordHash, googleSub: null } : account).where(eq(users.id, linked.id));
       if (passwordHash) await tx.delete(sessions).where(eq(sessions.userId, linked.id));
       return linked.id;
     };

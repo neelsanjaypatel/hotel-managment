@@ -1,17 +1,37 @@
 import "server-only";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
 // Owner sign-in with Google (OAuth authorization code flow with PKCE).
 // Needs GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET. APP_URL fixes the address sent to Google;
 // behind Caddy the request itself only sees 127.0.0.1.
 export const FLOW_COOKIE = "hm_google";
 export const FLOW_COOKIE_PATH = "/auth/google";
+export const SIGNUP_COOKIE = "hm_google_signup";
 
-export type Flow = { state: string; verifier: string; nonce: string; mode: "login" | "connect" };
+export type Flow = { state: string; verifier: string; nonce: string; mode: "login" | "connect" | "signup" };
 
 export const googleConfigured = () => !!process.env.GOOGLE_CLIENT_ID && !!process.env.GOOGLE_CLIENT_SECRET;
 
 export const appOrigin = (req: Request) => process.env.APP_URL?.replace(/\/$/, "") || new URL(req.url).origin;
+
+// Proof of a Google identity between the callback and the signup form, signed so it cannot be forged.
+export type GoogleIdentity = { sub: string; email: string };
+const sign = (body: string) => createHmac("sha256", process.env.GOOGLE_CLIENT_SECRET!).update(body).digest("base64url");
+
+export function sealIdentity(who: GoogleIdentity) {
+  const body = Buffer.from(JSON.stringify({ ...who, exp: Date.now() + 30 * 60 * 1000 })).toString("base64url");
+  return `${body}.${sign(body)}`;
+}
+
+export function openIdentity(sealed: string | undefined): GoogleIdentity | null {
+  if (!sealed || !googleConfigured()) return null;
+  const [body, mac] = sealed.split(".");
+  const good = Buffer.from(sign(body ?? ""));
+  const given = Buffer.from(mac ?? "");
+  if (good.length !== given.length || !timingSafeEqual(good, given)) return null;
+  const who = JSON.parse(Buffer.from(body, "base64url").toString()) as GoogleIdentity & { exp: number };
+  return who.exp > Date.now() ? { sub: who.sub, email: who.email } : null;
+}
 
 const random = () => randomBytes(32).toString("base64url");
 

@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   pgTable,
   pgEnum,
@@ -119,11 +120,13 @@ export const users = pgTable("users", {
   // Owners who connected Google log in with it instead of a password.
   googleSub: text("google_sub").unique(), // Google's permanent account id
   email: text("email"),
+  // True once the owner of the address proved it: the link in our mail, or Google.
+  emailVerified: boolean("email_verified").notNull().default(false),
   role: roleEnum("role").notNull(),
   employeeId: integer("employee_id"),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-}, (t) => [index("users_hotel").on(t.hotelId)]);
+}, (t) => [index("users_hotel").on(t.hotelId), uniqueIndex("users_email").on(sql`lower(${t.email})`)]);
 
 export const sessions = pgTable(
   "sessions",
@@ -136,6 +139,16 @@ export const sessions = pgTable(
   },
   (t) => [index("sessions_user").on(t.userId)],
 );
+
+// One-time links sent by mail; only their hash is stored.
+export const emailTokens = pgTable("email_tokens", {
+  id: text("id").primaryKey(),
+  userId: integer("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  purpose: text("purpose", { enum: ["verify", "reset"] }).notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+});
 
 // Wrong-password and sign-up counters. In the database because a serverless app runs on many
 // instances at once and a counter in one instance's memory would not stop anything.
