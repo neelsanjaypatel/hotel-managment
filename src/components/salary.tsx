@@ -4,9 +4,9 @@ import { getDb, schema } from "@/db";
 import { monthPayroll } from "@/lib/payroll";
 import { addDays, monthBounds, prettyMonth, rupees, PAY_MODE_LABEL } from "@/lib/format";
 import { Card, Empty, Stat } from "./ui";
-import { ActButton } from "./forms";
+import { ActButton, ActionForm, Input } from "./forms";
 import { AdjustmentForm } from "./adjustment-form";
-import { deleteAdjustment } from "@/lib/salary-actions";
+import { deleteAdjustment, setLoanCut } from "@/lib/salary-actions";
 
 const TONE: Record<string, string> = {
   P: "bg-accent-soft text-accent",
@@ -17,7 +17,7 @@ const TONE: Record<string, string> = {
 };
 
 // Salary slip, attendance calendar and advances for one employee and month.
-const ADJ_LABEL: Record<string, string> = { bonus: "Bonus", allowance: "Allowance", deduction: "Deduction" };
+const ADJ_LABEL: Record<string, string> = { bonus: "Bonus", allowance: "Allowance", deduction: "Deduction", loan: "Loan" };
 
 // canEdit: the owner may add or remove bonus / allowance / deductions here.
 export async function SalaryView({ hotelId, employeeId, month, canEdit = false }: { hotelId: number; employeeId: number; month: string; canEdit?: boolean }) {
@@ -76,7 +76,7 @@ export async function SalaryView({ hotelId, employeeId, month, canEdit = false }
             {row.bonus > 0 && <><dt className="text-muted">+ Bonus</dt><dd className="text-right text-income">{rupees(row.bonus)}</dd></>}
             {row.allowance > 0 && <><dt className="text-muted">+ Allowance</dt><dd className="text-right text-income">{rupees(row.allowance)}</dd></>}
             {row.deduction > 0 && <><dt className="text-muted">- Deduction</dt><dd className="text-right text-expense">{rupees(row.deduction)}</dd></>}
-            <dt className="text-muted">- Advance{row.loanDue ? " (incl. loan installment)" : ""}</dt><dd className="text-right text-expense">{rupees(row.advance)}</dd>
+            <dt className="text-muted">- Advance{row.loanDue ? " (incl. loan)" : ""}</dt><dd className="text-right text-expense">{rupees(row.advance)}</dd>
             <dt className="text-muted">- Wages already paid</dt><dd className="text-right text-expense">{rupees(row.wagesPaid)}</dd>
             <dt className="text-muted">- Salary paid</dt><dd className="text-right text-expense">{rupees(row.salaryPaid)}</dd>
             <dt className="border-t border-line pt-1.5 font-semibold">Balance payable</dt><dd className="border-t border-line pt-1.5 text-right font-semibold">{rupees(row.net)}</dd>
@@ -89,14 +89,27 @@ export async function SalaryView({ hotelId, employeeId, month, canEdit = false }
                   <li key={x.id} className="flex items-center justify-between gap-3">
                     <span>{ADJ_LABEL[x.kind]} · {x.note}</span>
                     <span className="inline-flex items-center gap-3">
-                      <span className={x.kind === "deduction" ? "text-expense" : "text-income"}>
-                        {x.kind === "deduction" ? "-" : "+"}{rupees(x.amount)}
+                      <span className={x.kind === "deduction" || x.kind === "loan" ? "text-expense" : "text-income"}>
+                        {x.kind === "deduction" || x.kind === "loan" ? "-" : "+"}{rupees(x.amount)}
                       </span>
                       {canEdit && <ActButton run={deleteAdjustment.bind(null, x.id)} label="Remove" confirm={`Remove ${ADJ_LABEL[x.kind].toLowerCase()} "${x.note}"?`} />}
                     </span>
                   </li>
                 ))}
               </ul>
+            </div>
+          )}
+          {canEdit && row.loanOpen > 0 && (
+            <div className="mt-4 border-t border-line pt-3">
+              <div className="mb-2 flex justify-between gap-3 text-sm">
+                <span className="font-medium">Loan balance</span>
+                <span className="num font-semibold">{rupees(row.loanOpen)}</span>
+              </div>
+              <ActionForm action={setLoanCut} submit="Save" resetOnOk={false} className="sm:max-w-xs">
+                <input type="hidden" name="employeeId" value={employeeId} />
+                <input type="hidden" name="month" value={month} />
+                <Input name="loanCut" label={`Cut from ${prettyMonth(month)} salary (₹)`} defaultValue={row.loanCut ? row.loanCut / 100 : ""} placeholder="0" inputMode="decimal" />
+              </ActionForm>
             </div>
           )}
           {canEdit && (

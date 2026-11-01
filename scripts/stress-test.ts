@@ -303,6 +303,40 @@ async function main() {
     check("Removing an owner's partner share leaves the owner login alone", still.active && still.role === "admin");
   }
 
+  // ---- loans: the owner sets each month's cut ----
+  {
+    const h = await hotel("loan");
+    const month = today.slice(0, 7);
+    const prev = addDays(`${month}-01`, -1);
+    const prevMonth = prev.slice(0, 7);
+    const { monthPayroll } = await import("../src/lib/payroll");
+    const [e] = await db
+      .insert(schema.employees)
+      .values({ hotelId: h.hotel.id, code: "L1", name: "Raju", department: "Rooms", payType: "monthly", rate: 3000000, joinDate: "2020-01-01" })
+      .returning();
+    await db.insert(schema.advances).values({ hotelId: h.hotel.id, employeeId: e.id, date: prev, amount: 1000000, paidVia: "cash", installment: 0, createdBy: h.owner.id });
+    const row = async (m: string) => (await monthPayroll(h.hotel.id, m, { employeeIds: [e.id] }))[0];
+    const r0 = await row(prevMonth);
+    check("Loan cuts nothing until the owner sets it", r0.advance === 0 && r0.loanLeft === 1000000 && r0.net === 0);
+    const cutFd = (m: string, a: string) => form({ employeeId: String(e.id), month: m, loanCut: a });
+    await h.as(() => salary.setLoanCut(null, cutFd(prevMonth, "3000")));
+    await h.as(() => salary.setLoanCut(null, cutFd(prevMonth, "4000")));
+    const r1 = await row(prevMonth);
+    check("Saving the cut again replaces it, salary goes down by it", r1.loanCut === 400000 && r1.net === -400000 && r1.loanLeft === 600000);
+    const over = (await h.as(() => salary.setLoanCut(null, cutFd(month, "7000")))) as { error?: string };
+    check("Cut above the balance is refused", !!over.error, over.error ?? "");
+    await h.as(() => salary.setLoanCut(null, cutFd(month, "6000")));
+    const r2 = await row(month);
+    check("Next month starts from the balance left", r2.loanOpen === 600000 && r2.loanCut === 600000 && r2.loanLeft === 0);
+    check("Loan cut does not reduce earned pay", r2.earned === 0 && r2.deduction === 0);
+    await db.insert(schema.advances).values({ hotelId: h.hotel.id, employeeId: e.id, date: `${prevMonth}-01`, amount: 500000, paidVia: "cash", installment: 100000, createdBy: h.owner.id });
+    const r3 = await row(prevMonth);
+    check("Older fixed installment loans keep their schedule", r3.loanDue === 500000 && r3.loanLeft === 1000000);
+    const added = (await h.as(() => actions.addAdvance(null, form({ date: today, employeeId: String(e.id), paidVia: "cash", recover: "monthly", amount: "2000" })))) as { ok?: string };
+    const [v] = await raw<{ installment: number | null }[]>`select installment from advances where hotel_id = ${h.hotel.id} order by id desc limit 1`;
+    check("Loan form asks for no installment", !!added.ok && v.installment === 0);
+  }
+
   // ---- entries racing the day close ----
   {
     const h = await hotel("close");

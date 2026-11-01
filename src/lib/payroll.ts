@@ -31,8 +31,8 @@ export function loanSchedule(amount: number, inst: number, loanMonth: string, mo
 //          during the month (Labour Wages expenses) are subtracted.
 // The rate is the one in force on each day (employee_rates), so a raise in November
 // does not change October. OT: that day's per-day rate / 8 per hour.
-// Advances given in the month are recovered in full; loans (advances with an
-// installment) are recovered one installment per month.
+// Advances given in the month are recovered in full. Loans are recovered by what the owner
+// sets for each month; older loans with a fixed installment keep their schedule.
 // Salary already handed over for this month (salary_payments.month) is subtracted too.
 // Bonus and allowance entries for the month are added; deductions are taken off.
 export async function monthPayroll(hotelId: number, month: string, opts: { employeeIds?: number[] } = {}, db?: DB) {
@@ -46,7 +46,7 @@ export async function monthPayroll(hotelId: number, month: string, opts: { emplo
     or exists (select 1 from salary_adjustments j where j.employee_id = ${employees.id} and j.month = ${month}))`;
   const empFilter = and(eq(employees.hotelId, hotelId), opts.employeeIds ? inArray(employees.id, opts.employeeIds) : workedThisMonth);
 
-  const [emps, att, adv, wages, salary, rates, adjustments] = await Promise.all([
+  const [emps, att, adv, wages, salary, rates, adjustments, cuts] = await Promise.all([
     db.select().from(employees).where(empFilter).orderBy(employees.department, employees.name),
     db
       .select({ employeeId: attendance.employeeId, date: attendance.date, status: attendance.status, ot: attendance.otHours })
@@ -78,6 +78,11 @@ export async function monthPayroll(hotelId: number, month: string, opts: { emplo
       .from(salaryAdjustments)
       .where(and(eq(salaryAdjustments.hotelId, hotelId), eq(salaryAdjustments.month, month)))
       .orderBy(asc(salaryAdjustments.id)),
+    // Every loan cut up to this month, for the balance left.
+    db
+      .select({ employeeId: salaryAdjustments.employeeId, month: salaryAdjustments.month, amount: salaryAdjustments.amount })
+      .from(salaryAdjustments)
+      .where(and(eq(salaryAdjustments.hotelId, hotelId), eq(salaryAdjustments.kind, "loan"), lte(salaryAdjustments.month, month))),
   ]);
 
   return emps.map((e) => {
@@ -109,8 +114,11 @@ export async function monthPayroll(hotelId: number, month: string, opts: { emplo
     let advance = 0;
     let loanDue = 0;
     let loanLeft = 0;
+    let loanGiven = 0;
     for (const a of adv.filter((x) => x.employeeId === e.id)) {
-      if (a.installment) {
+      if (a.installment === 0) {
+        loanGiven += a.amount;
+      } else if (a.installment) {
         const s = loanSchedule(a.amount, a.installment, a.date.slice(0, 7), month);
         loanDue += s.due;
         loanLeft += s.left;
@@ -118,6 +126,12 @@ export async function monthPayroll(hotelId: number, month: string, opts: { emplo
         advance += a.amount;
       }
     }
+    const loanCut = sumOf("loan");
+    const cutBefore = cuts.filter((c) => c.employeeId === e.id && c.month < month).reduce((a, c) => a + c.amount, 0);
+    // Balance before this month's cut, and after it.
+    const loanOpen = Math.max(0, loanGiven - cutBefore);
+    loanDue += loanCut;
+    loanLeft += Math.max(0, loanOpen - loanCut);
     const wagesPaid = wages.find((w) => w.employeeId === e.id)?.total ?? 0;
     const salaryPaid = salary.find((s) => s.employeeId === e.id)?.total ?? 0;
     return {
@@ -137,6 +151,8 @@ export async function monthPayroll(hotelId: number, month: string, opts: { emplo
       advance: advance + loanDue,
       loanDue,
       loanLeft,
+      loanOpen,
+      loanCut,
       wagesPaid,
       salaryPaid,
       net: earned - advance - loanDue - wagesPaid - salaryPaid,

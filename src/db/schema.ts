@@ -409,6 +409,8 @@ export const advances = pgTable(
     paidVia: payModeEnum("paid_via").notNull(),
     // null: recovered in full from this month's salary. Otherwise a loan recovered
     // at this much per month, starting with the month it was given.
+    // null: advance, cut in full. 0: loan, the owner sets each month's cut (kind "loan" in
+    // salary_adjustments). Above 0: older loans with a fixed monthly installment.
     installment: integer("installment"),
     note: text("note"),
     createdBy: integer("created_by")
@@ -456,7 +458,7 @@ export const salaryAdjustments = pgTable(
       .notNull()
       .references(() => employees.id),
     month: text("month").notNull(), // YYYY-MM
-    kind: text("kind", { enum: ["bonus", "allowance", "deduction"] }).notNull(),
+    kind: text("kind", { enum: ["bonus", "allowance", "deduction", "loan"] }).notNull(),
     amount: integer("amount").notNull(), // always positive; kind decides the sign
     note: text("note").notNull(), // reason, shown on the payslip
     createdBy: integer("created_by")

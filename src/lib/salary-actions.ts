@@ -5,7 +5,7 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb, schema, type DB } from "@/db";
 import { requireAction } from "./auth";
-import { isMonth, prettyMonth, rupees, todayIST, PAID_MODES } from "./format";
+import { isMonth, prettyMonth, rupees, toPaise, todayIST, PAID_MODES } from "./format";
 import { monthPayroll } from "./payroll";
 import { UserError, amount, assertDayOpen, audit, checkEntryDate, lockHotel, ok, onOpenDay, owned, run, str, type FormState } from "./action-helpers";
 
@@ -97,6 +97,33 @@ export async function addAdjustment(_: FormState, fd: FormData): Promise<FormSta
     await audit(user, "create", "adjustment", row.id, row);
     revalidatePath("/", "layout");
     return ok(`${KIND_LABEL[kind.data]} of ${rupees(row.amount)} added for ${emp.name}.`);
+  });
+}
+
+// How much of the employee's loan comes off this month's salary. Saving again replaces it; 0
+// means nothing is cut this month.
+export async function setLoanCut(_: FormState, fd: FormData): Promise<FormState> {
+  return run(async () => {
+    const user = await requireAction("manageMaster");
+    const month = salaryMonth(fd);
+    const employeeId = Number(fd.get("employeeId"));
+    const emp = await owned(schema.employees, employeeId, user.hotelId, "employee");
+    const cut = toPaise(fd.get("loanCut") || "0");
+    if (cut == null || cut < 0) throw new UserError("Enter a valid amount.");
+    const { salaryAdjustments: adj } = schema;
+    const db = await getDb();
+    await db.transaction(async (tx) => {
+      await lockHotel(tx, user.hotelId);
+      const [row] = await monthPayroll(user.hotelId, month, { employeeIds: [employeeId] }, tx as unknown as DB);
+      if (cut > row.loanOpen) throw new UserError(`Loan balance is only ${rupees(row.loanOpen)}.`);
+      await tx.delete(adj).where(and(eq(adj.hotelId, user.hotelId), eq(adj.employeeId, employeeId), eq(adj.month, month), eq(adj.kind, "loan")));
+      if (cut > 0) {
+        await tx.insert(adj).values({ hotelId: user.hotelId, employeeId, month, kind: "loan", amount: cut, note: "From this month's salary", createdBy: user.id });
+      }
+    });
+    await audit(user, "loan_cut", "employee", employeeId, { month, cut });
+    revalidatePath("/", "layout");
+    return ok(cut ? `${rupees(cut)} will be cut from ${emp.name}'s ${prettyMonth(month)} salary.` : "No loan cut this month.");
   });
 }
 

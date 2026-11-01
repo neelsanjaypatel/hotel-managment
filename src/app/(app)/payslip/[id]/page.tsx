@@ -64,7 +64,7 @@ export default async function PayslipPage({ params, searchParams }: PageProps<"/
             </Fragment>
           ))}
           <dt className="font-semibold">{row.adjustments.length ? "Gross pay" : "Gross earned"}</dt><dd className="text-right font-semibold">{rupees(row.earned)}</dd>
-          <dt className="text-muted">Less advance{row.loanDue ? ` (loan installment ${rupees(row.loanDue)})` : ""}</dt><dd className="text-right">{rupees(row.advance)}</dd>
+          <dt className="text-muted">Less advance{row.loanDue ? ` (loan ${rupees(row.loanDue)})` : ""}</dt><dd className="text-right">{rupees(row.advance)}</dd>
           {row.wagesPaid > 0 && <><dt className="text-muted">Less daily wages paid</dt><dd className="text-right">{rupees(row.wagesPaid)}</dd></>}
           <dt className="text-muted">Less salary paid</dt><dd className="text-right">{rupees(row.salaryPaid)}</dd>
           <dt className="border-t border-line pt-1.5 font-semibold">{row.net < 0 ? "Paid in excess" : "Balance payable"}</dt>

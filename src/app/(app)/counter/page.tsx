@@ -138,7 +138,7 @@ export default async function CounterPage({ searchParams }: PageProps<"/counter"
     })),
     ...advRows.map(({ a, name }) => ({
       kind: "advance" as const, row: a, linked: false, title: `${name} · ${PAY_MODE_LABEL[a.paidVia]}`,
-      sub: [a.installment ? `Loan, ${rupees(a.installment)}/month` : null, a.note].filter(Boolean).join(" · "),
+      sub: [a.installment == null ? null : a.installment ? `Loan, ${rupees(a.installment)}/month` : "Loan", a.note].filter(Boolean).join(" · "),
     })),
     ...recRows.map(({ r, party }) => ({
       kind: "receipt" as const, row: r, linked: !!r.bookingId,

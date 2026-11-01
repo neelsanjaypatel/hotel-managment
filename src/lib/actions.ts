@@ -95,11 +95,11 @@ async function parseAdvance(user: HotelUser, fd: FormData) {
   const employeeId = Number(fd.get("employeeId"));
   await owned(schema.employees, employeeId, user.hotelId, "employee");
   const total = amount(fd);
-  // A loan is recovered in monthly installments instead of all from this month's salary.
+  // A loan is not cut by itself: the owner sets the amount each month on the salary page.
+  // An older loan being corrected keeps its fixed installment.
   let installment: number | null = null;
   if (fd.get("recover") === "monthly") {
     installment = optionalAmount(fd, "installment", "Enter a valid monthly installment.");
-    if (!installment) throw new UserError("Enter how much to recover each month.");
     if (installment > total) throw new UserError("Monthly installment cannot be more than the loan.");
   }
   return { employeeId, amount: total, paidVia: payModeOf(fd, "paidVia", "Choose how it was paid."), installment, note: str(fd, "note") };

@@ -130,36 +130,29 @@ export function ExpenseForm({
 
 export function AdvanceForm({ date, employees, action, initial }: Common & { employees: Opt[] }) {
   const [paidVia, setPaidVia] = useState(val(initial, "paidVia") ?? "cash");
-  const [recover, setRecover] = useState(initial?.installment ? "monthly" : "full");
+  const [recover, setRecover] = useState(initial?.installment == null ? "full" : "monthly");
   return (
     <ActionForm action={action ?? addAdvance} submit={initial ? "Save changes" : "Give advance"} resetOnOk={!initial} wide>
       {!initial && <input type="hidden" name="date" value={date} />}
       <div className="space-y-3">
         <Select name="employeeId" label="Employee" options={employees} required placeholder="Choose..." defaultValue={val(initial, "employeeId")} />
         <Chips name="paidVia" label="Paid by" options={PAY_MODES} value={paidVia} onChange={setPaidVia} />
+        {typeof initial?.installment === "number" && initial.installment > 0 && (
+          <input type="hidden" name="installment" value={rupeesPlain(initial.installment)} />
+        )}
         <Chips
           name="recover"
           label="Recover"
           options={[
-            { value: "full", label: "From this month's salary" },
-            { value: "monthly", label: "Loan, monthly installments" },
+            { value: "full", label: "Advance: cut this month" },
+            { value: "monthly", label: "Loan: I set the cut each month" },
           ]}
           value={recover}
           onChange={setRecover}
         />
         <div className="grid grid-cols-2 gap-3">
           <AmountInput defaultValue={money(initial)} />
-          {recover === "monthly" ? (
-            <Input
-              name="installment"
-              label="Cut per month (₹)"
-              inputMode="decimal"
-              required
-              defaultValue={typeof initial?.installment === "number" ? rupeesPlain(initial.installment) : undefined}
-            />
-          ) : (
-            <Input name="note" label="Note" placeholder="optional" defaultValue={val(initial, "note")} />
-          )}
+          <Input name="note" label="Note" placeholder="optional" defaultValue={val(initial, "note")} />
         </div>
         {recover === "monthly" && <Input name="note" label="Note" placeholder="optional" defaultValue={val(initial, "note")} />}
       </div>
