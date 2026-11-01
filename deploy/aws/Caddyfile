@@ -1,5 +1,10 @@
-# Caddy gets and renews the HTTPS certificate for these names by itself.
-{DOMAIN}, www.{DOMAIN} {
+# Caddy gets and renews the HTTPS certificates for these names by itself.
+# www is the address Google login and APP_URL use, so the bare domain redirects to it.
+{DOMAIN} {
+	redir https://www.{DOMAIN}{uri} permanent
+}
+
+www.{DOMAIN} {
 	encode zstd gzip
 	reverse_proxy 127.0.0.1:3000
 }

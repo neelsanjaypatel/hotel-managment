@@ -8,7 +8,8 @@ cd "$APP_DIR"
 run() { sudo -u hoteldesk bash -c "set -a; . /etc/hotel-desk.env; set +a; cd $APP_DIR; $1"; }
 
 [ "${1:-}" = "--no-pull" ] || run "git pull --ff-only"
-run "npm ci --no-audit --no-fund"
+# --include=dev: NODE_ENV=production would otherwise skip the build tools.
+run "npm ci --include=dev --no-audit --no-fund"
 run "npm run build"
 systemctl restart hotel-desk
 sleep 3
