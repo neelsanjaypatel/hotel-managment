@@ -20,7 +20,7 @@ ask() { # variable, label: hidden, so a pasted secret stays off the screen
   case "$value" in *\'*) echo "$1 cannot contain a single quote"; exit 1 ;; esac
   printf -v "$1" '%s' "$value"
 }
-ask DATABASE_URL "DATABASE_URL (Supabase Transaction pooler string)"
+ask DATABASE_URL "DATABASE_URL (Supabase Session pooler string, port 5432)"
 [ -n "$DATABASE_URL" ] || { echo "DATABASE_URL is empty"; exit 1; }
 ask DATA_KEY "DATA_KEY (the same key as before; without it saved Aadhaar numbers cannot be read)"
 [ "$(printf '%s' "$DATA_KEY" | base64 -d 2>/dev/null | wc -c)" = 32 ] || { echo "DATA_KEY must be 32 bytes in base64"; exit 1; }

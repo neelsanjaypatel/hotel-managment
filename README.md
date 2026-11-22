@@ -169,8 +169,11 @@ close and reopen is written to `audit_log`.
 ## Deploy (Supabase + Vercel)
 
 1. **Supabase**: create a project in region *South Asia (Mumbai)*. From
-   *Connect* copy the **Transaction pooler** connection string (port 6543) and
-   put your database password in it.
+   *Connect* copy the **Session pooler** connection string (port 5432) and
+   put your database password in it. Do not use the Transaction pooler (port
+   6543): postgres-js sends several queries at once over one connection, and
+   under load the transaction pooler stops answering and every page hangs
+   (seen in production on 2026-11-22).
 2. **Vercel**: *Add New > Project*, import this GitHub repository, and add the
    environment variables
    - `DATABASE_URL` = the pooler string above
@@ -208,8 +211,8 @@ is wiped on each deploy, so the local PGlite database cannot be used there.
 Schema changes: edit `src/db/schema.ts`, run `npm run db:generate`. Locally the
 dev server applies migrations to PGlite on start; in production `npm start`
 (or `npm run db:migrate`) applies them to `DATABASE_URL` before the server
-starts. Any Postgres works the same way (Supabase: use the Transaction pooler
-string, port 6543).
+starts. Any Postgres works the same way (Supabase: use the Session pooler
+string, port 5432, never the Transaction pooler on 6543).
 
 ## Not built yet (next phases)
 
