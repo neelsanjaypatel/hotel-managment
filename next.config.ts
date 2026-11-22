@@ -12,6 +12,19 @@ const nextConfig: NextConfig = {
     afterFiles: [],
     fallback: [],
   }),
+  // Browser-side protections on every response: https only for a year, no framing by other
+  // sites (clickjacking), no content-type guessing, and no full URLs leaked to other sites.
+  headers: async () => [
+    {
+      source: "/:path*",
+      headers: [
+        { key: "Strict-Transport-Security", value: "max-age=31536000" },
+        { key: "X-Frame-Options", value: "DENY" },
+        { key: "X-Content-Type-Options", value: "nosniff" },
+        { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+      ],
+    },
+  ],
   serverExternalPackages: ["@electric-sql/pglite", "nodemailer"],
   turbopack: {
     rules: {
