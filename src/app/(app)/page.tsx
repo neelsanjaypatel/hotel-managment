@@ -7,7 +7,7 @@ import { dailySeries, dayRows, groupCategories, partyBalances, rangeTotals } fro
 import { bookingsBetween } from "@/lib/bookings";
 import { monthProfit } from "@/lib/payroll";
 import { addDays, bookingNo, monthBounds, prettyDate, prettyMonth, rupees, todayIST, SALE_MODE_LABEL, SLOT_LABEL, UNIT_LABEL, isMonth } from "@/lib/format";
-import { Badge, Bar, Card, PageHeader, Stat } from "@/components/ui";
+import { Badge, Bar, Card, PageHeader, QuickAction, Stat } from "@/components/ui";
 import { PeriodPicker } from "@/components/forms";
 import { DailyChart } from "@/components/daily-chart";
 
@@ -77,6 +77,21 @@ export default async function Dashboard({ searchParams }: PageProps<"/">) {
         <Link href={`/summary?month=${month}`} className="btn btn-ghost">Money summary</Link>
         <PeriodPicker name="month" type="month" value={month} max={today.slice(0, 7)} />
       </PageHeader>
+
+      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <QuickAction href="/counter" title="Add sale or expense" sub="Today's counter">
+          <path d="M12 5v14M5 12h14" />
+        </QuickAction>
+        <QuickAction href="/attendance" title="Mark attendance" sub="Who came today">
+          <path d="M5 4h14v17H5zM9 12l2 2 4-4" />
+        </QuickAction>
+        <QuickAction href="/bookings" title="New booking" sub="Rooms and banquet">
+          <path d="M4 6h16v14H4zM4 10h16M8 3v4M16 3v4" />
+        </QuickAction>
+        <QuickAction href="/reports" title="See reports" sub="Day, month, sections">
+          <path d="M4 20V10M10 20V4M16 20v-7M21 20H3" />
+        </QuickAction>
+      </div>
 
       {reminders.length > 0 && (
         <div className="mb-4 space-y-2">

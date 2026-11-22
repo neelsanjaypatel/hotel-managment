@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useActionState, useTransition } from "react";
 import { signupAction } from "@/lib/platform-actions";
+import { PasswordField } from "@/components/forms";
 
 export function SignupForm({ googleEmail }: { googleEmail?: string }) {
   const [state, action, pending] = useActionState(signupAction, null);
@@ -50,7 +51,7 @@ export function SignupForm({ googleEmail }: { googleEmail?: string }) {
           </label>
           <label className="block">
             <span className="label">Password (8+ characters)</span>
-            <input name="password" type="password" className="field" required minLength={8} autoComplete="new-password" />
+            <PasswordField name="password" required minLength={8} autoComplete="new-password" />
           </label>
         </>
       )}

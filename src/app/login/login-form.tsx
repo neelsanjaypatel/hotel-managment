@@ -2,6 +2,7 @@
 
 import { useActionState, useTransition } from "react";
 import { loginAction } from "@/lib/actions";
+import { PasswordField } from "@/components/forms";
 
 export function LoginForm() {
   const [state, action, pending] = useActionState(loginAction, null);
@@ -21,7 +22,7 @@ export function LoginForm() {
       </label>
       <label className="block">
         <span className="label">Password</span>
-        <input name="password" type="password" className="field" autoComplete="current-password" required />
+        <PasswordField name="password" autoComplete="current-password" required />
       </label>
       {state?.error && <p className="text-sm text-danger">{state.error}</p>}
       <button className="btn btn-lg w-full" disabled={pending}>

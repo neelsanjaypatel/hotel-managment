@@ -18,6 +18,16 @@
   --danger: #b3261e;
   /* Brass and marigold: decorative marks on the public pages, never body text. */
   --marigold: #d99a1e;
+  --income-soft: #e3f0ea;
+  /* The menu down the side of the app. */
+  --side: #ffffff;
+  --side-ink: #1d1c19;
+  --side-muted: #6c685f;
+  --side-line: #e3e0d6;
+  --side-hover: #faf9f5;
+  --side-active: #e3f0ea;
+  --side-active-ink: #1e6b4e;
+  --side-mark: #1e6b4e;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -38,7 +48,97 @@
     --warn-soft: #362a15;
     --danger: #f2766c;
     --marigold: #e8b04a;
+    --income-soft: #1d3329;
+    --side: #1c1c19;
+    --side-ink: #ecebe6;
+    --side-muted: #a19d93;
+    --side-line: #34332e;
+    --side-hover: #22221f;
+    --side-active: #1d3329;
+    --side-active-ink: #4fb48a;
+    --side-mark: #4fb48a;
   }
+}
+
+/* Colour themes for the signed-in app, set as data-theme on the app shell. Three candidates
+   while the owner chooses; the one picked becomes the default and the others go. */
+[data-theme="emerald"] {
+  --bg: #f1f5f3;
+  --surface: #ffffff;
+  --surface-2: #f5f9f7;
+  --ink: #10231b;
+  --muted: #56675f;
+  --line: #dbe5df;
+  --accent: #0b7a53;
+  --accent-soft: #dcf3e8;
+  --accent-ink: #ffffff;
+  --income: #0b7a53;
+  --income-soft: #dcf3e8;
+  --expense: #c2410c;
+  --expense-soft: #fde9dd;
+  --warn: #9a5b00;
+  --warn-soft: #fcf1d4;
+  --danger: #b91c1c;
+  --side: #0b3527;
+  --side-ink: #f2f8f5;
+  --side-muted: #a5c3b6;
+  --side-line: #1a4c3a;
+  --side-hover: #134534;
+  --side-active: #1b5a44;
+  --side-active-ink: #ffffff;
+  --side-mark: #f2b84b;
+}
+[data-theme="royal"] {
+  --bg: #f1f4fa;
+  --surface: #ffffff;
+  --surface-2: #f5f7fc;
+  --ink: #101a2e;
+  --muted: #56617a;
+  --line: #dbe2ef;
+  --accent: #1f4fd1;
+  --accent-soft: #e1e9fc;
+  --accent-ink: #ffffff;
+  --income: #0a7d4f;
+  --income-soft: #dcf3e8;
+  --expense: #c2410c;
+  --expense-soft: #fde9dd;
+  --warn: #9a5b00;
+  --warn-soft: #fcf1d4;
+  --danger: #b91c1c;
+  --side: #0f1d45;
+  --side-ink: #f0f3fb;
+  --side-muted: #a4b1d2;
+  --side-line: #223465;
+  --side-hover: #18295a;
+  --side-active: #2748a8;
+  --side-active-ink: #ffffff;
+  --side-mark: #7fb0ff;
+}
+[data-theme="amber"] {
+  --bg: #f8f3ec;
+  --surface: #fffdfa;
+  --surface-2: #f6eee3;
+  --ink: #261a14;
+  --muted: #74635a;
+  --line: #e8dccb;
+  --accent: #b0530a;
+  --accent-soft: #fbe8d0;
+  --accent-ink: #ffffff;
+  --income: #17774c;
+  --income-soft: #ddf1e6;
+  --expense: #be123c;
+  --expense-soft: #fde3e9;
+  --warn: #8f5a00;
+  --warn-soft: #fbefcf;
+  --danger: #b91c1c;
+  --side: #2a1e18;
+  --side-ink: #fbf4ea;
+  --side-muted: #c7b3a3;
+  --side-line: #44332a;
+  --side-hover: #382920;
+  --side-active: #4d382c;
+  --side-active-ink: #ffffff;
+  --side-mark: #f5b544;
 }
 
 @theme inline {
@@ -58,6 +158,15 @@
   --color-warn-soft: var(--warn-soft);
   --color-danger: var(--danger);
   --color-marigold: var(--marigold);
+  --color-income-soft: var(--income-soft);
+  --color-side: var(--side);
+  --color-side-ink: var(--side-ink);
+  --color-side-muted: var(--side-muted);
+  --color-side-line: var(--side-line);
+  --color-side-hover: var(--side-hover);
+  --color-side-active: var(--side-active);
+  --color-side-active-ink: var(--side-active-ink);
+  --color-side-mark: var(--side-mark);
   --font-display: var(--font-bricolage), var(--font-geist-sans), sans-serif;
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
@@ -73,18 +182,35 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* Inside the side menu, shared pieces (ghost buttons, hints) take the menu's own colours. */
+.side-scope {
+  --ink: var(--side-ink);
+  --muted: var(--side-muted);
+  --line: var(--side-line);
+}
+
 .field {
   width: 100%;
   border: 1px solid var(--line);
   background: var(--surface);
-  border-radius: 8px;
-  padding: 0.55rem 0.7rem;
+  border-radius: 10px;
+  padding: 0.6rem 0.75rem;
+  min-height: 2.75rem; /* a finger-sized target on a phone */
   font-size: 0.95rem;
   color: var(--ink);
 }
 .field:focus {
   outline: 2px solid var(--accent);
   outline-offset: -1px;
+}
+/* A field only as wide as its content (month and date pickers in page headers). Plain CSS,
+   because .field's own width outranks Tailwind's w-auto. */
+.field-auto {
+  width: auto;
+}
+/* Room for the eye button inside a password box. */
+.field-pw {
+  padding-right: 2.9rem;
 }
 
 .label {
@@ -100,8 +226,9 @@ body {
   align-items: center;
   justify-content: center;
   gap: 0.4rem;
-  border-radius: 8px;
-  padding: 0.55rem 1rem;
+  border-radius: 10px;
+  min-height: 2.75rem;
+  padding: 0.55rem 1.1rem;
   font-weight: 600;
   font-size: 0.9rem;
   background: var(--accent);
@@ -141,12 +268,16 @@ body {
 }
 .tbl th {
   text-align: left;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--muted);
   font-size: 0.75rem;
-  padding: 0.5rem 0.75rem;
+  padding: 0.6rem 0.75rem;
+  background: var(--surface-2);
   border-bottom: 1px solid var(--line);
   white-space: nowrap;
+}
+.tbl tbody tr:hover td {
+  background: var(--surface-2);
 }
 .tbl td {
   padding: 0.55rem 0.75rem;

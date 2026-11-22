@@ -108,7 +108,7 @@ export function PeriodPicker({ name, value, type = "date", max }: { name: string
   return (
     <input
       type={type}
-      className="field w-auto"
+      className="field field-auto"
       value={value}
       max={max}
       onChange={(e) => e.target.value && router.push(`?${name}=${e.target.value}`)}
@@ -159,8 +159,34 @@ export function Input({ label, ...props }: { label: string } & React.InputHTMLAt
   return (
     <label className="block">
       <span className="label">{label}</span>
-      <input className="field" {...props} />
+      {props.type === "password" ? <PasswordField {...props} /> : <input className="field" {...props} />}
     </label>
+  );
+}
+
+// Password box with an eye button: people type on phones and want to check what they typed.
+// Every password input in the app goes through this.
+export function PasswordField(props: Omit<React.InputHTMLAttributes<HTMLInputElement>, "type" | "className">) {
+  const [show, setShow] = useState(false);
+  return (
+    <span className="relative block">
+      <input {...props} type={show ? "text" : "password"} className="field field-pw" />
+      <button
+        type="button"
+        onClick={() => setShow((v) => !v)}
+        aria-label={show ? "Hide password" : "Show password"}
+        aria-pressed={show}
+        title={show ? "Hide password" : "Show password"}
+        className="absolute inset-y-0 right-0 grid w-11 place-items-center rounded-r-[10px] text-muted hover:text-ink"
+      >
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z" />
+          <circle cx="12" cy="12" r="3" />
+          {/* A stroke through the eye while the password is visible: tap again to hide. */}
+          {show && <path d="M4 4l16 16" />}
+        </svg>
+      </button>
+    </span>
   );
 }
 
