@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { getUser, can } from "@/lib/auth";
 import { googleConfigured } from "@/lib/google";
 import { logoutAction } from "@/lib/actions";
-import { NavLinks, type NavItem } from "@/components/nav";
+import { BottomNav, NavLinks, type NavItem } from "@/components/nav";
 import { InstallApp } from "@/components/install-app";
 import type { Access } from "@/lib/subscription";
 
@@ -61,11 +61,11 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
     ? [
         { href: "/platform", label: "Hotels", icon: "hotels" },
         { href: "/platform/plans", label: "Plans", icon: "plans" },
-        { href: "/account", label: "My account", icon: "account" },
+        { href: "/account", label: "My account", short: "Account", icon: "account" },
       ]
     : ([
-        readable && can(user, "viewReports") && { href: "/", label: "Dashboard", icon: "dashboard", group: DAILY },
-        readable && staff && { href: "/counter", label: "Daily Counter", icon: "counter", group: DAILY },
+        readable && can(user, "viewReports") && { href: "/", label: "Dashboard", short: "Home", icon: "dashboard", group: DAILY },
+        readable && staff && { href: "/counter", label: "Daily Counter", short: "Counter", icon: "counter", group: DAILY },
         readable && staff && { href: "/bookings", label: "Bookings", icon: "bookings", group: DAILY },
         readable && (can(user, "markAttendance") || can(user, "viewEmployees")) && { href: "/attendance", label: "Attendance", icon: "attendance", group: DAILY },
         readable && can(user, "viewEmployees") && { href: "/employees", label: "Employees", icon: "employees", group: PEOPLE },
@@ -73,13 +73,13 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
         readable && can(user, "viewPayroll") && { href: "/partners", label: "Partners", icon: "partners", group: PEOPLE },
         readable && staff && { href: "/parties", label: "Dues", icon: "dues", group: MONEY },
         readable && staff && { href: "/suppliers", label: "Suppliers", icon: "suppliers", group: MONEY },
-        readable && can(user, "viewPayroll") && { href: "/summary", label: "Money summary", icon: "summary", group: MONEY },
+        readable && can(user, "viewPayroll") && { href: "/summary", label: "Money summary", short: "Summary", icon: "summary", group: MONEY },
         readable && can(user, "viewReports") && { href: "/reports", label: "Reports", icon: "reports", group: MONEY },
-        readable && can(user, "viewPayroll") && { href: "/activity", label: "Activity log", icon: "activity", group: ADMIN },
+        readable && can(user, "viewPayroll") && { href: "/activity", label: "Activity log", short: "Activity", icon: "activity", group: ADMIN },
         readable && can(user, "manageMaster") && { href: "/settings", label: "Settings", icon: "settings", group: ADMIN },
         can(user, "manageMaster") && { href: "/billing", label: "Billing", icon: "billing", group: ADMIN },
-        readable && user.employeeId && { href: "/me", label: "My Salary", icon: "salary", group: YOU },
-        { href: "/account", label: "My account", icon: "account", group: YOU },
+        readable && user.employeeId && { href: "/me", label: "My Salary", short: "Salary", icon: "salary", group: YOU },
+        { href: "/account", label: "My account", short: "Account", icon: "account", group: YOU },
       ].filter(Boolean) as NavItem[]);
   // Letters only: "Owner (Admin)" is OA, not O(.
   const initials = (user.name.match(/\p{L}+/gu) ?? ["?"]).map((w) => w[0]).slice(0, 2).join("").toUpperCase();
@@ -121,8 +121,14 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
             Log in faster and safer: <Link href="/account" className="font-medium text-accent">connect your Google account</Link>
           </div>
         )}
-        <main className="mx-auto w-full max-w-6xl px-4 py-6 md:px-8 md:py-8">{children}</main>
+        {/* Room at the bottom on phones so the last row is not hidden behind the menu bar. */}
+        <main className="mx-auto w-full max-w-6xl px-4 pt-6 pb-28 md:px-8 md:py-8">{children}</main>
       </div>
+      <BottomNav items={items}>
+        <form action={logoutAction}>
+          <button className="btn btn-ghost w-full">Log out</button>
+        </form>
+      </BottomNav>
     </div>
   );
 }

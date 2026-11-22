@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState, type ReactNode } from "react";
 
 export type NavIcon = keyof typeof ICONS;
-export type NavItem = { href: string; label: string; icon: NavIcon; group?: string };
+// `short` is the one-word name used under the icon in the phone's bottom bar.
+export type NavItem = { href: string; label: string; icon: NavIcon; group?: string; short?: string };
 
 // One small line drawing per menu entry, so the menu can be read at a glance.
 const ICONS = {
@@ -97,6 +99,7 @@ const ICONS = {
       <circle cx="8" cy="9" r="1.4" />
     </>
   ),
+  more: <path d="M4 5h6v6H4zM14 5h6v6h-6zM4 15h6v6H4zM14 15h6v6h-6z" />,
 } as const;
 
 function Icon({ name }: { name: NavIcon }) {
@@ -107,12 +110,15 @@ function Icon({ name }: { name: NavIcon }) {
   );
 }
 
+const isActive = (path: string, href: string) => (href === "/" ? path === "/" : path.startsWith(href));
+
+// The menu down the side, on tablets and computers. Phones get BottomNav instead.
 export function NavLinks({ items }: { items: NavItem[] }) {
   const path = usePathname();
   return (
-    <nav className="flex gap-1 overflow-x-auto px-3 pb-3 md:shrink-0 md:flex-col md:gap-0.5 md:overflow-visible md:pb-0" aria-label="Main menu">
+    <nav className="hidden px-3 md:flex md:shrink-0 md:flex-col md:gap-0.5" aria-label="Main menu">
       {items.map((it, i) => {
-        const active = it.href === "/" ? path === "/" : path.startsWith(it.href);
+        const active = isActive(path, it.href);
         // A heading above the first entry of each group.
         const heading = it.group && it.group !== items[i - 1]?.group ? it.group : null;
         return (
@@ -133,5 +139,84 @@ export function NavLinks({ items }: { items: NavItem[] }) {
         );
       })}
     </nav>
+  );
+}
+
+// Phones: the four jobs done most sit under the thumb, everything else is one tap away in
+// "More". With five entries or fewer (an employee's login) they all fit and there is no More.
+const TABS = 4;
+
+export function BottomNav({ items, children }: { items: NavItem[]; children?: ReactNode }) {
+  const path = usePathname();
+  const [open, setOpen] = useState(false);
+  const all = items.length <= TABS + 1;
+  const tabs = all ? items : items.slice(0, TABS);
+  const rest = all ? [] : items.slice(TABS);
+  const inRest = rest.some((it) => isActive(path, it.href));
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    addEventListener("keydown", onKey);
+    return () => removeEventListener("keydown", onKey);
+  }, [open]);
+
+  const tab = "flex min-w-0 flex-1 flex-col items-center gap-0.5 px-1 pt-2 pb-1.5 text-[0.688rem] font-medium";
+  return (
+    <>
+      {open && (
+        <div className="fixed inset-0 z-40 md:hidden print:hidden" role="dialog" aria-modal="true" aria-label="All pages">
+          <button type="button" className="absolute inset-0 bg-black/45" aria-label="Close menu" onClick={() => setOpen(false)} />
+          <div className="absolute inset-x-0 bottom-0 max-h-[85dvh] overflow-y-auto rounded-t-3xl bg-surface px-4 pt-3 pb-[calc(5.5rem+env(safe-area-inset-bottom))]">
+            <div className="mx-auto mb-2 h-1 w-10 rounded-full bg-line" aria-hidden />
+            {rest.map((it, i) => {
+              const heading = it.group && it.group !== rest[i - 1]?.group ? it.group : null;
+              const active = isActive(path, it.href);
+              return (
+                <div key={it.href} className="contents">
+                  {heading && <div className="px-1 pt-4 pb-1.5 text-[0.688rem] font-semibold uppercase tracking-widest text-muted">{heading}</div>}
+                  <Link
+                    href={it.href}
+                    onClick={() => setOpen(false)}
+                    aria-current={active ? "page" : undefined}
+                    className={`mb-1.5 flex items-center gap-3 rounded-xl border px-3.5 py-3 text-[0.95rem] font-medium ${
+                      active ? "border-accent bg-accent-soft text-accent" : "border-line bg-surface-2 text-ink"
+                    }`}
+                  >
+                    <Icon name={it.icon} />
+                    {it.label}
+                  </Link>
+                </div>
+              );
+            })}
+            {children && <div className="mt-4 border-t border-line pt-4">{children}</div>}
+          </div>
+        </div>
+      )}
+      <nav
+        className="fixed inset-x-0 bottom-0 z-50 flex border-t border-line bg-surface pb-[env(safe-area-inset-bottom)] md:hidden print:hidden"
+        aria-label="Main menu"
+      >
+        {tabs.map((it) => {
+          const active = !open && isActive(path, it.href);
+          return (
+            <Link key={it.href} href={it.href} onClick={() => setOpen(false)} aria-current={active ? "page" : undefined} className={`${tab} ${active ? "text-accent" : "text-muted"}`}>
+              <span className={`grid h-7 w-14 place-items-center rounded-full ${active ? "bg-accent-soft" : ""}`}>
+                <Icon name={it.icon} />
+              </span>
+              <span className="max-w-full truncate">{it.short ?? it.label}</span>
+            </Link>
+          );
+        })}
+        {rest.length > 0 && (
+          <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} className={`${tab} ${open || inRest ? "text-accent" : "text-muted"}`}>
+            <span className={`grid h-7 w-14 place-items-center rounded-full ${open || inRest ? "bg-accent-soft" : ""}`}>
+              <Icon name="more" />
+            </span>
+            More
+          </button>
+        )}
+      </nav>
+    </>
   );
 }
