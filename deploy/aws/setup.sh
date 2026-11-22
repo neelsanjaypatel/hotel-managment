@@ -68,6 +68,14 @@ sudo install -m 755 "$APP_DIR/deploy/aws/update.sh" /usr/local/bin/hotel-desk-up
 sudo systemctl daemon-reload
 sudo systemctl enable hotel-desk
 
+echo "== Nightly database backup"
+# pg_dump must be at least as new as the database (Postgres 17); Ubuntu 24.04 ships 16.
+sudo apt-get install -y postgresql-common
+sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+sudo apt-get install -y postgresql-client-17
+sudo install -m 755 "$APP_DIR/deploy/aws/backup.sh" /usr/local/bin/hotel-desk-backup
+sudo install -m 644 "$APP_DIR/deploy/aws/backup.cron" /etc/cron.d/hotel-desk-backup
+
 echo "== Build and start"
 sudo /usr/local/bin/hotel-desk-update --no-pull
 

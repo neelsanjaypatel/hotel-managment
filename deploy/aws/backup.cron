@@ -1,0 +1,2 @@
+# Installed as /etc/cron.d/hotel-desk-backup. 21:30 UTC = 03:00 in India, the quietest hour.
+30 21 * * * root /usr/local/bin/hotel-desk-backup >> /var/log/hotel-desk-backup.log 2>&1
