@@ -12,7 +12,7 @@ export const metadata: Metadata = {
   appleWebApp: { capable: true, title: "Hotel Desk", statusBarStyle: "default" },
 };
 
-export const viewport: Viewport = { themeColor: "#1e6b4e" };
+export const viewport: Viewport = { themeColor: "#0b3527" };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (

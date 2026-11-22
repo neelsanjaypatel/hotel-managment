@@ -1,68 +1,6 @@
 @import "tailwindcss";
 
 :root {
-  --bg: #f5f4ef;
-  --surface: #ffffff;
-  --surface-2: #faf9f5;
-  --ink: #1d1c19;
-  --muted: #6c685f;
-  --line: #e3e0d6;
-  --accent: #1e6b4e;
-  --accent-soft: #e3f0ea;
-  --accent-ink: #ffffff;
-  --income: #1e6b4e;
-  --expense: #b0482a;
-  --expense-soft: #f8e9e3;
-  --warn: #9a5b00;
-  --warn-soft: #fbf0dc;
-  --danger: #b3261e;
-  /* Brass and marigold: decorative marks on the public pages, never body text. */
-  --marigold: #d99a1e;
-  --income-soft: #e3f0ea;
-  /* The menu down the side of the app. */
-  --side: #ffffff;
-  --side-ink: #1d1c19;
-  --side-muted: #6c685f;
-  --side-line: #e3e0d6;
-  --side-hover: #faf9f5;
-  --side-active: #e3f0ea;
-  --side-active-ink: #1e6b4e;
-  --side-mark: #1e6b4e;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #141412;
-    --surface: #1c1c19;
-    --surface-2: #22221f;
-    --ink: #ecebe6;
-    --muted: #a19d93;
-    --line: #34332e;
-    --accent: #4fb48a;
-    --accent-soft: #1d3329;
-    --accent-ink: #0d1a14;
-    --income: #5cc196;
-    --expense: #e9805f;
-    --expense-soft: #3a231b;
-    --warn: #e0a547;
-    --warn-soft: #362a15;
-    --danger: #f2766c;
-    --marigold: #e8b04a;
-    --income-soft: #1d3329;
-    --side: #1c1c19;
-    --side-ink: #ecebe6;
-    --side-muted: #a19d93;
-    --side-line: #34332e;
-    --side-hover: #22221f;
-    --side-active: #1d3329;
-    --side-active-ink: #4fb48a;
-    --side-mark: #4fb48a;
-  }
-}
-
-/* Colour themes for the signed-in app, set as data-theme on the app shell. Three candidates
-   while the owner chooses; the one picked becomes the default and the others go. */
-[data-theme="emerald"] {
   --bg: #f1f5f3;
   --surface: #ffffff;
   --surface-2: #f5f9f7;
@@ -79,6 +17,9 @@
   --warn: #9a5b00;
   --warn-soft: #fcf1d4;
   --danger: #b91c1c;
+  /* Brass and marigold: decorative marks on the public pages, never body text. */
+  --marigold: #d99a1e;
+  /* The menu down the side of the app: deep green, with a marigold mark on the open page. */
   --side: #0b3527;
   --side-ink: #f2f8f5;
   --side-muted: #a5c3b6;
@@ -88,57 +29,35 @@
   --side-active-ink: #ffffff;
   --side-mark: #f2b84b;
 }
-[data-theme="royal"] {
-  --bg: #f1f4fa;
-  --surface: #ffffff;
-  --surface-2: #f5f7fc;
-  --ink: #101a2e;
-  --muted: #56617a;
-  --line: #dbe2ef;
-  --accent: #1f4fd1;
-  --accent-soft: #e1e9fc;
-  --accent-ink: #ffffff;
-  --income: #0a7d4f;
-  --income-soft: #dcf3e8;
-  --expense: #c2410c;
-  --expense-soft: #fde9dd;
-  --warn: #9a5b00;
-  --warn-soft: #fcf1d4;
-  --danger: #b91c1c;
-  --side: #0f1d45;
-  --side-ink: #f0f3fb;
-  --side-muted: #a4b1d2;
-  --side-line: #223465;
-  --side-hover: #18295a;
-  --side-active: #2748a8;
-  --side-active-ink: #ffffff;
-  --side-mark: #7fb0ff;
-}
-[data-theme="amber"] {
-  --bg: #f8f3ec;
-  --surface: #fffdfa;
-  --surface-2: #f6eee3;
-  --ink: #261a14;
-  --muted: #74635a;
-  --line: #e8dccb;
-  --accent: #b0530a;
-  --accent-soft: #fbe8d0;
-  --accent-ink: #ffffff;
-  --income: #17774c;
-  --income-soft: #ddf1e6;
-  --expense: #be123c;
-  --expense-soft: #fde3e9;
-  --warn: #8f5a00;
-  --warn-soft: #fbefcf;
-  --danger: #b91c1c;
-  --side: #2a1e18;
-  --side-ink: #fbf4ea;
-  --side-muted: #c7b3a3;
-  --side-line: #44332a;
-  --side-hover: #382920;
-  --side-active: #4d382c;
-  --side-active-ink: #ffffff;
-  --side-mark: #f5b544;
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #101412;
+    --surface: #181d1a;
+    --surface-2: #1e2421;
+    --ink: #e9efec;
+    --muted: #9aa8a1;
+    --line: #2c3530;
+    --accent: #4fb48a;
+    --accent-soft: #1b3229;
+    --accent-ink: #0d1a14;
+    --income: #5cc196;
+    --income-soft: #1b3229;
+    --expense: #f08a5d;
+    --expense-soft: #3a231b;
+    --warn: #e0a547;
+    --warn-soft: #362a15;
+    --danger: #f2766c;
+    --marigold: #e8b04a;
+    --side: #0c1a15;
+    --side-ink: #e9efec;
+    --side-muted: #94aba0;
+    --side-line: #1c2f27;
+    --side-hover: #13261f;
+    --side-active: #1c3a2e;
+    --side-active-ink: #ffffff;
+    --side-mark: #f2b84b;
+  }
 }
 
 @theme inline {

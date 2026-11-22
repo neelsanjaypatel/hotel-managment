@@ -10,8 +10,8 @@ export default function manifest(): MetadataRoute.Manifest {
     id: "/",
     start_url: "/login",
     display: "standalone",
-    background_color: "#f5f4ef",
-    theme_color: "#1e6b4e",
+    background_color: "#f1f5f3",
+    theme_color: "#0b3527",
     icons: [
       { src: "/pwa-icon/192", sizes: "192x192", type: "image/png", purpose: "any" },
       { src: "/pwa-icon/512", sizes: "512x512", type: "image/png", purpose: "any" },

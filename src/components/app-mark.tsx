@@ -8,7 +8,7 @@ export function AppMark({ size }: { size: number }) {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        background: "#1e6b4e",
+        background: "#0b7a53",
         color: "#ffffff",
         fontSize: Math.round(size * 0.42),
         fontWeight: 700,

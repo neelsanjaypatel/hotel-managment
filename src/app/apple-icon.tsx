@@ -7,7 +7,7 @@ export const contentType = "image/png";
 // iOS rounds the corners itself, so the mark fills the square.
 export default function AppleIcon() {
   return new ImageResponse(
-    <div style={{ width: "100%", height: "100%", display: "flex", background: "#1e6b4e" }}>
+    <div style={{ width: "100%", height: "100%", display: "flex", background: "#0b7a53" }}>
       <AppMark size={180} />
     </div>,
     size,

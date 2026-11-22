@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getUser, can } from "@/lib/auth";
 import { googleConfigured } from "@/lib/google";
@@ -7,8 +6,6 @@ import { logoutAction } from "@/lib/actions";
 import { NavLinks, type NavItem } from "@/components/nav";
 import { InstallApp } from "@/components/install-app";
 import type { Access } from "@/lib/subscription";
-
-const THEMES = ["emerald", "royal", "amber"];
 
 const ROLE_LABEL = {
   superadmin: "Platform owner",
@@ -84,13 +81,11 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
         readable && user.employeeId && { href: "/me", label: "My Salary", icon: "salary", group: YOU },
         { href: "/account", label: "My account", icon: "account", group: YOU },
       ].filter(Boolean) as NavItem[]);
-  // Colour theme under trial: ?theme= is remembered in a cookie by /theme (see that route).
-  const theme = (await cookies()).get("hm_theme")?.value;
   // Letters only: "Owner (Admin)" is OA, not O(.
   const initials = (user.name.match(/\p{L}+/gu) ?? ["?"]).map((w) => w[0]).slice(0, 2).join("").toUpperCase();
 
   return (
-    <div data-theme={theme && THEMES.includes(theme) ? theme : undefined} className="min-h-dvh bg-bg text-ink md:grid md:grid-cols-[232px_minmax(0,1fr)]">
+    <div className="min-h-dvh md:grid md:grid-cols-[232px_minmax(0,1fr)]">
       <aside className="side-scope border-b border-side-line bg-side text-side-ink print:hidden md:sticky md:top-0 md:flex md:h-dvh md:flex-col md:overflow-y-auto md:border-r md:border-b-0">
         <div className="flex items-center justify-between gap-3 px-4 py-3 md:px-4 md:pt-5 md:pb-2">
           <div className="flex min-w-0 items-center gap-3">
