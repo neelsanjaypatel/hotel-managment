@@ -8,6 +8,7 @@ import { partnerPosition } from "@/lib/partners";
 import { addDays, isMonth, prettyMonth, rupees, todayIST } from "@/lib/format";
 import { Card, PageHeader } from "@/components/ui";
 import { PeriodPicker } from "@/components/forms";
+import { getT } from "@/i18n/server";
 
 export const metadata = { title: "Money summary" };
 
@@ -24,6 +25,7 @@ function Row({ label, value, href, strong, tone }: { label: string; value: numbe
 // Everything about money in one place: the month's profit, and today's position
 // (what others owe us, what we owe, cash in the drawer).
 export default async function SummaryPage({ searchParams }: PageProps<"/summary">) {
+  const t = await getT();
   const user = await requirePage("viewPayroll");
   const sp = await searchParams;
   const today = todayIST();
@@ -60,45 +62,45 @@ export default async function SummaryPage({ searchParams }: PageProps<"/summary"
 
   return (
     <>
-      <PageHeader title="Money summary" sub="Profit for the month, and what the hotel owes and is owed right now.">
+      <PageHeader title={t("Money summary")} sub={t("Profit for the month, and what the hotel owes and is owed right now.")}>
         <PeriodPicker name="month" type="month" value={month} max={thisMonth} />
       </PageHeader>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card title={`Profit · ${prettyMonth(month)}${month === thisMonth ? " (till today)" : ""}`}>
+        <Card title={`${t("Profit")} · ${prettyMonth(month, t.locale)}${month === thisMonth ? ` ${t("(till today)")}` : ""}`}>
           <dl className="text-sm">
-            <Row label="Income (all sales)" value={p.income} tone="in" href={`/reports?month=${month}`} />
-            <Row label="Expenses, incl. goods on credit and commission" value={-p.otherExpenses} tone="out" href={`/?month=${month}`} />
-            <Row label="Staff salaries earned" value={-p.salaries} tone="out" href={`/payroll?month=${month}`} />
-            <Row label="Profit" value={p.profit} strong tone={p.profit >= 0 ? "in" : "out"} href={`/partners?month=${month}`} />
+            <Row label={t("Income (all sales)")} value={p.income} tone="in" href={`/reports?month=${month}`} />
+            <Row label={t("Expenses, incl. goods on credit and commission")} value={-p.otherExpenses} tone="out" href={`/?month=${month}`} />
+            <Row label={t("Staff salaries earned")} value={-p.salaries} tone="out" href={`/payroll?month=${month}`} />
+            <Row label={t("Profit")} value={p.profit} strong tone={p.profit >= 0 ? "in" : "out"} href={`/partners?month=${month}`} />
           </dl>
-          <p className="mt-3 text-xs text-muted">{position.fy.label} profit so far: {rupees(position.fyProfit)}</p>
+          <p className="mt-3 text-xs text-muted">{t("{year} profit so far: {amount}", { year: position.fy.label, amount: rupees(position.fyProfit) })}</p>
         </Card>
 
-        <Card title="Cash">
+        <Card title={t("Cash")}>
           <dl className="text-sm">
-            <Row label="Cash in drawer now (as per entries)" value={drawerNow} href="/counter" strong />
+            <Row label={t("Cash in drawer now (as per entries)")} value={drawerNow} href="/counter" strong />
           </dl>
-          <p className="mt-3 text-xs text-muted">Bank balance is not shown: Hotel Desk is not connected to the bank.</p>
+          <p className="mt-3 text-xs text-muted">{t("Bank balance is not shown: Hotel Desk is not connected to the bank.")}</p>
         </Card>
 
-        <Card title="Others owe us">
+        <Card title={t("Others owe us")}>
           <dl className="text-sm">
-            <Row label="Zomato / Swiggy" value={due("aggregator")} href="/parties" />
-            <Row label="Credit customers" value={due("credit")} href="/parties" />
-            <Row label="Banquet clients" value={due("banquet")} href="/parties" />
-            <Row label="Staff loans still to recover" value={loans} href="/payroll" />
-            <Row label="Total to receive" value={receivable + loans} strong tone="in" />
+            <Row label={t("Zomato / Swiggy")} value={due("aggregator")} href="/parties" />
+            <Row label={t("Credit customers")} value={due("credit")} href="/parties" />
+            <Row label={t("Banquet clients")} value={due("banquet")} href="/parties" />
+            <Row label={t("Staff loans still to recover")} value={loans} href="/payroll" />
+            <Row label={t("Total to receive")} value={receivable + loans} strong tone="in" />
           </dl>
         </Card>
 
-        <Card title="We owe">
+        <Card title={t("We owe")}>
           <dl className="text-sm">
-            <Row label="Suppliers (goods on credit)" value={supplierDue} href="/suppliers" />
-            <Row label={`Salary still to pay (${prettyMonth(lastMonth)} + this month so far)`} value={salaryDue} href="/payroll" />
-            <Row label="Advances held for upcoming bookings" value={held.total} href="/bookings" />
-            <Row label={`Partners' profit not yet taken (${position.fy.label})`} value={partnersDue} href="/partners" />
-            <Row label="Total to pay" value={payable} strong tone="out" />
+            <Row label={t("Suppliers (goods on credit)")} value={supplierDue} href="/suppliers" />
+            <Row label={t("Salary still to pay ({month} + this month so far)", { month: prettyMonth(lastMonth, t.locale) })} value={salaryDue} href="/payroll" />
+            <Row label={t("Advances held for upcoming bookings")} value={held.total} href="/bookings" />
+            <Row label={t("Partners' profit not yet taken ({year})", { year: position.fy.label })} value={partnersDue} href="/partners" />
+            <Row label={t("Total to pay")} value={payable} strong tone="out" />
           </dl>
         </Card>
       </div>

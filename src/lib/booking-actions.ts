@@ -149,7 +149,7 @@ export async function createBooking(_: FormState, fd: FormData): Promise<FormSta
     const booking = await db.transaction(async (tx) => {
       await lockHotel(tx, user.hotelId);
       const clash = await findClash(tx, user.hotelId, d);
-      if (clash) throw new UserError(`${d.venue} is already booked: ${bookingNo(clash.number)} ${clash.title} on ${clash.date}.`);
+      if (clash) throw new UserError("{venue} is already booked: {booking} on {date}.", { venue: String(d.venue), booking: `${bookingNo(clash.number)} ${clash.title}`, date: clash.date });
       if (advance > 0) await assertDayOpen(tx, user.hotelId, today);
       const [party] = await tx
         .insert(parties)
@@ -198,7 +198,7 @@ export async function updateBooking(_: FormState, fd: FormData): Promise<FormSta
     await db.transaction(async (tx) => {
       await lockHotel(tx, user.hotelId);
       const clash = await findClash(tx, user.hotelId, d, b.id);
-      if (clash) throw new UserError(`${d.venue} is already booked: ${bookingNo(clash.number)} ${clash.title} on ${clash.date}.`);
+      if (clash) throw new UserError("{venue} is already booked: {booking} on {date}.", { venue: String(d.venue), booking: `${bookingNo(clash.number)} ${clash.title}`, date: clash.date });
       await tx.update(bookings).set(d).where(and(eq(bookings.id, b.id), eq(bookings.hotelId, user.hotelId)));
       await tx.update(parties).set({ phone }).where(and(eq(parties.id, b.partyId), eq(parties.hotelId, user.hotelId)));
     });
@@ -281,7 +281,7 @@ export async function cancelBooking(_: FormState, fd: FormData): Promise<FormSta
       .where(and(eq(receipts.hotelId, user.hotelId), eq(receipts.bookingId, b.id)));
     const refundRaw = String(fd.get("refund") ?? "").trim();
     const refund = refundRaw ? toPaise(refundRaw) : 0;
-    if (refund == null || refund < 0 || refund > paid) throw new UserError(`Refund must be between ₹0 and the ₹${paid / 100} received.`);
+    if (refund == null || refund < 0 || refund > paid) throw new UserError("Refund must be between ₹0 and the ₹{amount} received.", { amount: paid / 100 });
     const kept = paid - refund;
     const date = paid > 0 ? await checkEntryDate(user, todayIST()) : todayIST();
     const mode = refund > 0 ? payMode(fd, "refundMode") : null;

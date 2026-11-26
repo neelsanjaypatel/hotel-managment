@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState, useSyncExternalStore } from "react";
+import { useT } from "@/i18n/client";
 
 // Chrome's install event; not in the DOM typings yet.
 type InstallPrompt = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> };
@@ -12,6 +13,7 @@ const isStandalone = () =>
 const isIos = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.userAgent.includes("Macintosh") && navigator.maxTouchPoints > 1);
 
 export function InstallApp({ className = "" }: { className?: string }) {
+  const t = useT();
   const [prompt, setPrompt] = useState<InstallPrompt | null>(null);
   const [help, setHelp] = useState(false);
   const standalone = useSyncExternalStore(never, isStandalone, () => true);
@@ -44,12 +46,12 @@ export function InstallApp({ className = "" }: { className?: string }) {
   return (
     <div className={className}>
       <button type="button" onClick={install} className="btn btn-ghost w-full">
-        Install app on this phone
+        {t("Install app on this phone")}
       </button>
       {help && (
         <p className="mt-2 text-xs text-muted">
-          Tap the Share button <span aria-hidden>(square with an arrow)</span> at the bottom of Safari, then choose{" "}
-          <b className="text-ink">Add to Home Screen</b>.
+          {t("Tap the Share button")}{" "}<span aria-hidden>{t("(square with an arrow)")}</span>{" "}{t("at the bottom of Safari, then choose")}{" "}
+          <b className="text-ink">{t("Add to Home Screen")}</b>.
         </p>
       )}
     </div>

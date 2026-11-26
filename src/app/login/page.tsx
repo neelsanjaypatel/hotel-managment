@@ -8,6 +8,8 @@ import { display, Mark } from "@/components/public-chrome";
 import { GoogleButton } from "@/components/google-button";
 import { InstallApp } from "@/components/install-app";
 import { LoginForm } from "./login-form";
+import { getT } from "@/i18n/server";
+import { LanguageSwitcher } from "@/components/language-switcher";
 
 export const metadata = { title: "Log in" };
 
@@ -18,9 +20,10 @@ const GOOGLE_MESSAGE: Record<string, string> = {
 };
 
 export default async function LoginPage({ searchParams }: PageProps<"/login">) {
+  const t = await getT();
   if (await getUser()) redirect("/");
   const { google } = await searchParams;
-  const message = typeof google === "string" ? GOOGLE_MESSAGE[google] : undefined;
+  const message = typeof google === "string" && GOOGLE_MESSAGE[google] ? t(GOOGLE_MESSAGE[google]) : undefined;
   return (
     <div className={`${display.variable} min-h-dvh md:grid md:grid-cols-[minmax(0,6fr)_minmax(0,5fr)]`}>
       {/* The same welcome as the signup page: the day starts at the hotel's front door. */}
@@ -29,28 +32,29 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
         <div className="absolute inset-0 -z-10 bg-gradient-to-b from-black/65 via-black/35 to-black/80" aria-hidden />
         <Link href="/welcome" className="flex items-center gap-2 font-display text-lg font-bold">
           <Mark />
-          Hotel Desk
+          {t("Hotel Desk")}
         </Link>
-        <p className="mt-8 max-w-md font-display text-2xl font-bold tracking-tight text-balance md:text-4xl">Today&apos;s counter, staff and cash, all in one place.</p>
+        <p className="mt-8 max-w-md font-display text-2xl font-bold tracking-tight text-balance md:text-4xl">{t("Today's counter, staff and cash, all in one place.")}</p>
       </aside>
 
       <main className="flex items-center justify-center px-4 py-8 md:px-10">
         <div className="w-full max-w-sm">
-          <h1 className="font-display text-3xl font-bold tracking-tight">Log in</h1>
+          <LanguageSwitcher className="mb-8" />
+          <h1 className="font-display text-3xl font-bold tracking-tight">{t("Log in")}</h1>
           {message && <p className="mt-3 text-sm text-danger">{message}</p>}
           {googleConfigured() && (
             <section className="mt-6">
-              <GoogleButton href="/auth/google">Continue with Google</GoogleButton>
+              <GoogleButton href="/auth/google">{t("Continue with Google")}</GoogleButton>
             </section>
           )}
           <section className="mt-6">
             <LoginForm />
             <p className="mt-3 text-center text-sm">
-              <Link href="/forgot" className="font-medium text-accent">Forgot password?</Link>
+              <Link href="/forgot" className="font-medium text-accent">{t("Forgot password?")}</Link>
             </p>
           </section>
           <p className="mt-5 text-center text-sm text-muted">
-            New hotel? <Link href="/signup" className="font-medium text-accent">Start a free trial</Link>
+            {t("New hotel?")}{" "}<Link href="/signup" className="font-medium text-accent">{t("Start a free trial")}</Link>
           </p>
           <InstallApp className="mt-6" />
         </div>

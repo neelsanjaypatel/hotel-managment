@@ -6,12 +6,14 @@ import { payAllSalaries, paySalary } from "@/lib/salary-actions";
 import { AdjustmentForm } from "@/components/adjustment-form";
 import { Card, PageHeader, Stat } from "@/components/ui";
 import { ActionForm, Input, PeriodPicker, Select } from "@/components/forms";
+import { getT } from "@/i18n/server";
 
 const MODES = Object.entries(PAY_MODE_LABEL).map(([value, label]) => ({ value, label }));
 
 export const metadata = { title: "Payroll" };
 
 export default async function PayrollPage({ searchParams }: PageProps<"/payroll">) {
+  const t = await getT();
   const user = await requirePage("viewPayroll");
   const sp = await searchParams;
   const thisMonth = todayIST().slice(0, 7);
@@ -27,25 +29,25 @@ export default async function PayrollPage({ searchParams }: PageProps<"/payroll"
 
   return (
     <>
-      <PageHeader title="Payroll" sub={`${prettyMonth(month)}${month === thisMonth ? " · running total till today" : ""}`}>
+      <PageHeader title={t("Payroll")} sub={`${prettyMonth(month, t.locale)}${month === thisMonth ? ` · ${t("running total till today")}` : ""}`}>
         <PeriodPicker name="month" type="month" value={month} max={thisMonth} />
       </PageHeader>
 
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Total earned" value={rupees(sum("earned"))} tone="in" hint={`${rows.length} ${rows.length === 1 ? "employee" : "employees"}`} />
-        <Stat label="Advances to recover" value={rupees(sum("advance"))} tone="warn" />
-        <Stat label="Already paid" value={rupees(sum("wagesPaid") + sum("salaryPaid"))} hint={`Daily wages ${rupees(sum("wagesPaid"))} · salary ${rupees(sum("salaryPaid"))}`} />
-        <Stat label="Balance to pay" value={rupees(sum("net"))} hint={unmarked ? `${unmarked} with missing attendance days` : "Attendance complete"} />
+        <Stat label={t("Total earned")} value={rupees(sum("earned"))} tone="in" hint={rows.length === 1 ? t("1 employee") : t("{n} employees", { n: rows.length })} />
+        <Stat label={t("Advances to recover")} value={rupees(sum("advance"))} tone="warn" />
+        <Stat label={t("Already paid")} value={rupees(sum("wagesPaid") + sum("salaryPaid"))} hint={t("Daily wages {wages} · salary {salary}", { wages: rupees(sum("wagesPaid")), salary: rupees(sum("salaryPaid")) })} />
+        <Stat label={t("Balance to pay")} value={rupees(sum("net"))} hint={unmarked ? t("{n} with missing attendance days", { n: unmarked }) : t("Attendance complete")} />
       </div>
 
       {canPay && dueCount > 0 && (
-        <Card title={`Pay all balances for ${prettyMonth(month)}`} className="mb-4">
-          <ActionForm action={payAllSalaries} submit={`Pay ${rupees(dueTotal)} to ${dueCount} ${dueCount === 1 ? "employee" : "employees"}`} resetOnOk={false}>
+        <Card title={t("Pay all balances for {month}", { month: prettyMonth(month, t.locale) })} className="mb-4">
+          <ActionForm action={payAllSalaries} submit={dueCount === 1 ? t("Pay {amount} to 1 employee", { amount: rupees(dueTotal) }) : t("Pay {amount} to {n} employees", { amount: rupees(dueTotal), n: dueCount })} resetOnOk={false}>
             <input type="hidden" name="month" value={month} />
             <div className="sm:max-w-xs">
-              <Select name="paidVia" label="Paid by" options={MODES} defaultValue="bank" />
+              <Select name="paidVia" label={t("Paid by")} options={MODES} defaultValue="bank" />
             </div>
-            <p className="mt-2 text-xs text-muted">Recorded as paid today. Cash payments come out of today&apos;s cash drawer.</p>
+            <p className="mt-2 text-xs text-muted">{t("Recorded as paid today. Cash payments come out of today's cash drawer.")}</p>
           </ActionForm>
         </Card>
       )}
@@ -55,8 +57,8 @@ export default async function PayrollPage({ searchParams }: PageProps<"/payroll"
           <table className="tbl">
             <thead>
               <tr>
-                <th>Employee</th><th>Type</th><th className="r">P</th><th className="r">A</th><th className="r">Half</th><th className="r">Leave+WO</th><th className="r">OT h</th>
-                <th className="r">Paid days</th><th className="r">+ Bonus / allow.</th><th className="r">− Deduction</th><th className="r">Earned</th><th className="r">Advance</th><th className="r">Wages paid</th><th className="r">Salary paid</th><th className="r">Balance</th><th />
+                <th>{t("Employee")}</th><th>{t("Type")}</th><th className="r">P</th><th className="r">A</th><th className="r">{t("Half")}</th><th className="r">{t("Leave+WO")}</th><th className="r">{t("OT h")}</th>
+                <th className="r">{t("Paid days")}</th><th className="r">{t("+ Bonus / allow.")}</th><th className="r">{t("− Deduction")}</th><th className="r">{t("Earned")}</th><th className="r">{t("Advance")}</th><th className="r">{t("Wages paid")}</th><th className="r">{t("Salary paid")}</th><th className="r">{t("Balance")}</th><th />
               </tr>
             </thead>
             <tbody>
@@ -66,7 +68,7 @@ export default async function PayrollPage({ searchParams }: PageProps<"/payroll"
                     <Link href={`/employees/${r.employee.id}?month=${month}`} className="font-medium hover:text-accent">{r.employee.name}</Link>
                     <div className="text-xs text-muted">{r.employee.department}</div>
                   </td>
-                  <td className="text-muted">{r.employee.payType === "monthly" ? "Monthly" : "Daily"}</td>
+                  <td className="text-muted">{r.employee.payType === "monthly" ? t("Monthly") : t("Daily")}</td>
                   <td className="r num">{r.counts.P}</td>
                   <td className="r num">{r.counts.A || ""}</td>
                   <td className="r num">{r.counts.H || ""}</td>
@@ -82,10 +84,10 @@ export default async function PayrollPage({ searchParams }: PageProps<"/payroll"
                   <td className={`r num font-semibold ${r.net < 0 ? "text-expense" : ""}`}>{rupees(r.net)}</td>
                   <td className="r whitespace-nowrap">
                     <span className="inline-flex items-start gap-3">
-                      <Link href={`/payslip/${r.employee.id}?month=${month}`} className="text-xs text-accent">Payslip</Link>
+                      <Link href={`/payslip/${r.employee.id}?month=${month}`} className="text-xs text-accent">{t("Payslip")}</Link>
                       {canPay && (
                         <details className="text-left">
-                          <summary className="cursor-pointer text-xs text-muted">+ Adjust</summary>
+                          <summary className="cursor-pointer text-xs text-muted">{t("+ Adjust")}</summary>
                           <div className="mt-2 w-60">
                             <AdjustmentForm employeeId={r.employee.id} month={month} />
                           </div>
@@ -93,14 +95,14 @@ export default async function PayrollPage({ searchParams }: PageProps<"/payroll"
                       )}
                       {canPay && r.net > 0 && (
                         <details className="text-left">
-                          <summary className="cursor-pointer text-xs font-semibold text-accent">Pay</summary>
+                          <summary className="cursor-pointer text-xs font-semibold text-accent">{t("Pay")}</summary>
                           <div className="mt-2 w-56">
-                            <ActionForm action={paySalary} submit="Pay">
+                            <ActionForm action={paySalary} submit={t("Pay")}>
                               <input type="hidden" name="month" value={month} />
                               <input type="hidden" name="employeeId" value={r.employee.id} />
                               <div className="space-y-2">
-                                <Input name="amount" label="Amount (₹)" inputMode="decimal" defaultValue={rupeesPlain(r.net)} required />
-                                <Select name="paidVia" label="Paid by" options={MODES} defaultValue="cash" />
+                                <Input name="amount" label={t("Amount (₹)")} inputMode="decimal" defaultValue={rupeesPlain(r.net)} required />
+                                <Select name="paidVia" label={t("Paid by")} options={MODES} defaultValue="cash" />
                               </div>
                             </ActionForm>
                           </div>
@@ -115,8 +117,7 @@ export default async function PayrollPage({ searchParams }: PageProps<"/payroll"
         </div>
       </Card>
       <p className="mt-3 text-xs text-muted">
-        Monthly staff: salary ÷ days in month × (present + leave + week off + half days ÷ 2). Daily staff: wage × (present + half days ÷ 2).
-        Overtime: one day&apos;s pay ÷ 8 per hour. Bonus and allowance are added, deductions taken off. Advances, daily wages already paid from the counter and salary already paid for this month are deducted.
+        {t("Monthly staff: salary ÷ days in month × (present + leave + week off + half days ÷ 2). Daily staff: wage × (present + half days ÷ 2). Overtime: one day's pay ÷ 8 per hour. Bonus and allowance are added, deductions taken off. Advances, daily wages already paid from the counter and salary already paid for this month are deducted.")}
       </p>
     </>
   );

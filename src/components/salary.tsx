@@ -7,6 +7,7 @@ import { Card, Empty, Stat } from "./ui";
 import { ActButton, ActionForm, Input } from "./forms";
 import { AdjustmentForm } from "./adjustment-form";
 import { deleteAdjustment, setLoanCut } from "@/lib/salary-actions";
+import { getT } from "@/i18n/server";
 
 const TONE: Record<string, string> = {
   P: "bg-accent-soft text-accent",
@@ -21,10 +22,11 @@ const ADJ_LABEL: Record<string, string> = { bonus: "Bonus", allowance: "Allowanc
 
 // canEdit: the owner may add or remove bonus / allowance / deductions here.
 export async function SalaryView({ hotelId, employeeId, month, canEdit = false }: { hotelId: number; employeeId: number; month: string; canEdit?: boolean }) {
+  const t = await getT();
   const db = await getDb();
   const { from, to } = monthBounds(month);
   const [row] = await monthPayroll(hotelId, month, { employeeIds: [employeeId] }, db);
-  if (!row) return <Empty>Employee not found.</Empty>;
+  if (!row) return <Empty>{t("Employee not found.")}</Empty>;
   const [att, adv] = await Promise.all([
     db.select().from(schema.attendance).where(and(eq(schema.attendance.hotelId, hotelId), eq(schema.attendance.employeeId, employeeId), between(schema.attendance.date, from, to))),
     db.select().from(schema.advances).where(and(eq(schema.advances.hotelId, hotelId), eq(schema.advances.employeeId, employeeId), between(schema.advances.date, from, to))).orderBy(desc(schema.advances.date)),
@@ -38,24 +40,24 @@ export async function SalaryView({ hotelId, employeeId, month, canEdit = false }
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
-        <Link href={`/payslip/${employeeId}?month=${month}`} className="btn btn-ghost">Payslip</Link>
+        <Link href={`/payslip/${employeeId}?month=${month}`} className="btn btn-ghost">{t("Payslip")}</Link>
       </div>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Earned so far" value={rupees(row.earned)} tone="in" hint={`${row.paidDays} paid day(s)${row.otPay ? ` + OT ${rupees(row.otPay)}` : ""}`} />
-        <Stat label="Advance / loan cut" value={rupees(row.advance)} tone="warn" hint={row.loanLeft ? `Loan left after this month: ${rupees(row.loanLeft)}` : undefined} />
-        <Stat label="Already paid" value={rupees(row.wagesPaid + row.salaryPaid)} hint={row.wagesPaid ? `Daily wages ${rupees(row.wagesPaid)}` : undefined} />
-        <Stat label="Balance payable" value={rupees(row.net)} tone={row.net >= 0 ? "in" : "out"} />
+        <Stat label={t("Earned so far")} value={rupees(row.earned)} tone="in" hint={`${t("{n} paid day(s)", { n: row.paidDays })}${row.otPay ? ` + ${t("OT {amount}", { amount: rupees(row.otPay) })}` : ""}`} />
+        <Stat label={t("Advance / loan cut")} value={rupees(row.advance)} tone="warn" hint={row.loanLeft ? t("Loan left after this month: {amount}", { amount: rupees(row.loanLeft) }) : undefined} />
+        <Stat label={t("Already paid")} value={rupees(row.wagesPaid + row.salaryPaid)} hint={row.wagesPaid ? t("Daily wages {amount}", { amount: rupees(row.wagesPaid) }) : undefined} />
+        <Stat label={t("Balance payable")} value={rupees(row.net)} tone={row.net >= 0 ? "in" : "out"} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
-        <Card title={`Attendance · ${prettyMonth(month)}`}>
+        <Card title={`${t("Attendance")} · ${prettyMonth(month, t.locale)}`}>
           <div className="grid grid-cols-7 gap-1 text-center text-xs">
-            {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => <div key={d} className="pb-1 text-muted">{d}</div>)}
+            {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => <div key={d} className="pb-1 text-muted">{t(d)}</div>)}
             {Array.from({ length: lead }).map((_, i) => <div key={`x${i}`} />)}
             {days.map((d) => {
               const a = byDate.get(d);
               return (
-                <div key={d} className={`rounded-md py-1.5 ${a ? TONE[a.status] : "text-muted"}`} title={a ? `${a.status}${a.otHours ? `, OT ${a.otHours}h` : ""}` : "Not marked"}>
+                <div key={d} className={`rounded-md py-1.5 ${a ? TONE[a.status] : "text-muted"}`} title={a ? `${a.status}${a.otHours ? `, OT ${a.otHours}h` : ""}` : t("Not marked")}>
                   <div className="num">{Number(d.slice(8))}</div>
                   <div className="text-[10px] font-semibold">{a?.status ?? "·"}</div>
                 </div>
@@ -63,36 +65,36 @@ export async function SalaryView({ hotelId, employeeId, month, canEdit = false }
             })}
           </div>
           <p className="mt-3 text-xs text-muted">
-            P {row.counts.P} · A {row.counts.A} · Half {row.counts.H} · Leave {row.counts.L} · Week off {row.counts.WO}{row.ot ? ` · OT ${row.ot} hrs` : ""}
+            P {row.counts.P} · A {row.counts.A} · {t("Half")} {row.counts.H} · {t("Leave")} {row.counts.L} · {t("Week off")} {row.counts.WO}{row.ot ? ` · ${t("OT {n} hrs", { n: row.ot })}` : ""}
           </p>
         </Card>
 
-        <Card title="Salary calculation">
+        <Card title={t("Salary calculation")}>
           <dl className="num grid grid-cols-[1fr_auto] gap-y-1.5 text-sm">
-            <dt className="text-muted">{e.payType === "monthly" ? "Monthly salary" : "Daily wage"}</dt><dd className="text-right">{rupees(row.rate)}</dd>
-            <dt className="text-muted">Paid days</dt><dd className="text-right">{row.paidDays}</dd>
-            <dt className="text-muted">Basic earned</dt><dd className="text-right">{rupees(row.basic)}</dd>
-            <dt className="text-muted">Overtime</dt><dd className="text-right">{rupees(row.otPay)}</dd>
-            {row.bonus > 0 && <><dt className="text-muted">+ Bonus</dt><dd className="text-right text-income">{rupees(row.bonus)}</dd></>}
-            {row.allowance > 0 && <><dt className="text-muted">+ Allowance</dt><dd className="text-right text-income">{rupees(row.allowance)}</dd></>}
-            {row.deduction > 0 && <><dt className="text-muted">- Deduction</dt><dd className="text-right text-expense">{rupees(row.deduction)}</dd></>}
-            <dt className="text-muted">- Advance{row.loanDue ? " (incl. loan)" : ""}</dt><dd className="text-right text-expense">{rupees(row.advance)}</dd>
-            <dt className="text-muted">- Wages already paid</dt><dd className="text-right text-expense">{rupees(row.wagesPaid)}</dd>
-            <dt className="text-muted">- Salary paid</dt><dd className="text-right text-expense">{rupees(row.salaryPaid)}</dd>
-            <dt className="border-t border-line pt-1.5 font-semibold">Balance payable</dt><dd className="border-t border-line pt-1.5 text-right font-semibold">{rupees(row.net)}</dd>
+            <dt className="text-muted">{e.payType === "monthly" ? t("Monthly salary") : t("Daily wage")}</dt><dd className="text-right">{rupees(row.rate)}</dd>
+            <dt className="text-muted">{t("Paid days")}</dt><dd className="text-right">{row.paidDays}</dd>
+            <dt className="text-muted">{t("Basic earned")}</dt><dd className="text-right">{rupees(row.basic)}</dd>
+            <dt className="text-muted">{t("Overtime")}</dt><dd className="text-right">{rupees(row.otPay)}</dd>
+            {row.bonus > 0 && <><dt className="text-muted">{t("+ Bonus")}</dt><dd className="text-right text-income">{rupees(row.bonus)}</dd></>}
+            {row.allowance > 0 && <><dt className="text-muted">{t("+ Allowance")}</dt><dd className="text-right text-income">{rupees(row.allowance)}</dd></>}
+            {row.deduction > 0 && <><dt className="text-muted">{t("- Deduction")}</dt><dd className="text-right text-expense">{rupees(row.deduction)}</dd></>}
+            <dt className="text-muted">{t("- Advance")}{row.loanDue ? t(" (incl. loan)") : ""}</dt><dd className="text-right text-expense">{rupees(row.advance)}</dd>
+            <dt className="text-muted">{t("- Wages already paid")}</dt><dd className="text-right text-expense">{rupees(row.wagesPaid)}</dd>
+            <dt className="text-muted">{t("- Salary paid")}</dt><dd className="text-right text-expense">{rupees(row.salaryPaid)}</dd>
+            <dt className="border-t border-line pt-1.5 font-semibold">{t("Balance payable")}</dt><dd className="border-t border-line pt-1.5 text-right font-semibold">{rupees(row.net)}</dd>
           </dl>
           {row.adjustments.length > 0 && (
             <div className="mt-4 border-t border-line pt-3">
-              <div className="mb-1 text-xs font-medium text-muted">Bonus, allowance and deductions</div>
+              <div className="mb-1 text-xs font-medium text-muted">{t("Bonus, allowance and deductions")}</div>
               <ul className="num space-y-1 text-sm">
                 {row.adjustments.map((x) => (
                   <li key={x.id} className="flex items-center justify-between gap-3">
-                    <span>{ADJ_LABEL[x.kind]} · {x.note}</span>
+                    <span>{t(ADJ_LABEL[x.kind])} · {x.note}</span>
                     <span className="inline-flex items-center gap-3">
                       <span className={x.kind === "deduction" || x.kind === "loan" ? "text-expense" : "text-income"}>
                         {x.kind === "deduction" || x.kind === "loan" ? "-" : "+"}{rupees(x.amount)}
                       </span>
-                      {canEdit && <ActButton run={deleteAdjustment.bind(null, x.id)} label="Remove" confirm={`Remove ${ADJ_LABEL[x.kind].toLowerCase()} "${x.note}"?`} />}
+                      {canEdit && <ActButton run={deleteAdjustment.bind(null, x.id)} label={t("Remove")} confirm={t('Remove {kind} "{note}"?', { kind: t(ADJ_LABEL[x.kind]).toLowerCase(), note: x.note })} />}
                     </span>
                   </li>
                 ))}
@@ -102,19 +104,19 @@ export async function SalaryView({ hotelId, employeeId, month, canEdit = false }
           {canEdit && row.loanOpen > 0 && (
             <div className="mt-4 border-t border-line pt-3">
               <div className="mb-2 flex justify-between gap-3 text-sm">
-                <span className="font-medium">Loan balance</span>
+                <span className="font-medium">{t("Loan balance")}</span>
                 <span className="num font-semibold">{rupees(row.loanOpen)}</span>
               </div>
-              <ActionForm action={setLoanCut} submit="Save" resetOnOk={false} className="sm:max-w-xs">
+              <ActionForm action={setLoanCut} submit={t("Save")} resetOnOk={false} className="sm:max-w-xs">
                 <input type="hidden" name="employeeId" value={employeeId} />
                 <input type="hidden" name="month" value={month} />
-                <Input name="loanCut" label={`Cut from ${prettyMonth(month)} salary (₹)`} defaultValue={row.loanCut ? row.loanCut / 100 : ""} placeholder="0" inputMode="decimal" />
+                <Input name="loanCut" label={t("Cut from {month} salary (₹)", { month: prettyMonth(month, t.locale) })} defaultValue={row.loanCut ? row.loanCut / 100 : ""} placeholder="0" inputMode="decimal" />
               </ActionForm>
             </div>
           )}
           {canEdit && (
             <details className="mt-4 border-t border-line pt-3">
-              <summary className="cursor-pointer text-sm font-medium text-accent">+ Add bonus / allowance / deduction</summary>
+              <summary className="cursor-pointer text-sm font-medium text-accent">{t("+ Add bonus / allowance / deduction")}</summary>
               <div className="mt-3 sm:max-w-xs">
                 <AdjustmentForm employeeId={employeeId} month={month} />
               </div>
@@ -122,10 +124,10 @@ export async function SalaryView({ hotelId, employeeId, month, canEdit = false }
           )}
           {adv.length > 0 && (
             <div className="mt-4 border-t border-line pt-3">
-              <div className="mb-1 text-xs font-medium text-muted">Advances this month</div>
+              <div className="mb-1 text-xs font-medium text-muted">{t("Advances this month")}</div>
               <ul className="num space-y-1 text-sm">
                 {adv.map((a) => (
-                  <li key={a.id} className="flex justify-between"><span>{a.date.slice(8)}/{a.date.slice(5, 7)} · {PAY_MODE_LABEL[a.paidVia]}{a.note ? ` · ${a.note}` : ""}</span><span>{rupees(a.amount)}</span></li>
+                  <li key={a.id} className="flex justify-between"><span>{a.date.slice(8)}/{a.date.slice(5, 7)} · {t(PAY_MODE_LABEL[a.paidVia])}{a.note ? ` · ${a.note}` : ""}</span><span>{rupees(a.amount)}</span></li>
                 ))}
               </ul>
             </div>

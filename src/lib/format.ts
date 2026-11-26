@@ -49,8 +49,11 @@ export function monthBounds(month: string): { from: string; to: string; days: nu
   return { from: `${month}-01`, to: `${month}-${String(days).padStart(2, "0")}`, days };
 }
 
-export function prettyDate(date: string): string {
-  return new Date(date + "T00:00:00Z").toLocaleDateString("en-IN", {
+// Day and month names follow the reader's language; the digits stay 0-9 in every language.
+const DATE_LOCALE: Record<string, string> = { en: "en-IN", hi: "hi-IN-u-nu-latn", gu: "gu-IN-u-nu-latn" };
+
+export function prettyDate(date: string, locale = "en"): string {
+  return new Date(date + "T00:00:00Z").toLocaleDateString(DATE_LOCALE[locale] ?? "en-IN", {
     weekday: "short",
     day: "numeric",
     month: "short",
@@ -59,8 +62,8 @@ export function prettyDate(date: string): string {
   });
 }
 
-export function prettyMonth(month: string): string {
-  return new Date(month + "-01T00:00:00Z").toLocaleDateString("en-IN", {
+export function prettyMonth(month: string, locale = "en"): string {
+  return new Date(month + "-01T00:00:00Z").toLocaleDateString(DATE_LOCALE[locale] ?? "en-IN", {
     month: "long",
     year: "numeric",
     timeZone: "UTC",

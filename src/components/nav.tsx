@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
+import { useT } from "@/i18n/client";
 
 export type NavIcon = keyof typeof ICONS;
 // `short` is the one-word name used under the icon in the phone's bottom bar.
@@ -114,9 +115,10 @@ const isActive = (path: string, href: string) => (href === "/" ? path === "/" : 
 
 // The menu down the side, on tablets and computers. Phones get BottomNav instead.
 export function NavLinks({ items }: { items: NavItem[] }) {
+  const t = useT();
   const path = usePathname();
   return (
-    <nav className="hidden px-3 md:flex md:shrink-0 md:flex-col md:gap-0.5" aria-label="Main menu">
+    <nav className="hidden px-3 md:flex md:shrink-0 md:flex-col md:gap-0.5" aria-label={t("Main menu")}>
       {items.map((it, i) => {
         const active = isActive(path, it.href);
         // A heading above the first entry of each group.
@@ -147,6 +149,7 @@ export function NavLinks({ items }: { items: NavItem[] }) {
 const TABS = 4;
 
 export function BottomNav({ items, children }: { items: NavItem[]; children?: ReactNode }) {
+  const t = useT();
   const path = usePathname();
   const [open, setOpen] = useState(false);
   const all = items.length <= TABS + 1;
@@ -165,8 +168,8 @@ export function BottomNav({ items, children }: { items: NavItem[]; children?: Re
   return (
     <>
       {open && (
-        <div className="fixed inset-0 z-40 md:hidden print:hidden" role="dialog" aria-modal="true" aria-label="All pages">
-          <button type="button" className="absolute inset-0 bg-black/45" aria-label="Close menu" onClick={() => setOpen(false)} />
+        <div className="fixed inset-0 z-40 md:hidden print:hidden" role="dialog" aria-modal="true" aria-label={t("All pages")}>
+          <button type="button" className="absolute inset-0 bg-black/45" aria-label={t("Close menu")} onClick={() => setOpen(false)} />
           <div className="absolute inset-x-0 bottom-0 max-h-[85dvh] overflow-y-auto rounded-t-3xl bg-surface px-4 pt-3 pb-[calc(5.5rem+env(safe-area-inset-bottom))]">
             <div className="mx-auto mb-2 h-1 w-10 rounded-full bg-line" aria-hidden />
             {rest.map((it, i) => {
@@ -195,7 +198,7 @@ export function BottomNav({ items, children }: { items: NavItem[]; children?: Re
       )}
       <nav
         className="fixed inset-x-0 bottom-0 z-50 flex border-t border-line bg-surface pb-[env(safe-area-inset-bottom)] md:hidden print:hidden"
-        aria-label="Main menu"
+        aria-label={t("Main menu")}
       >
         {tabs.map((it) => {
           const active = !open && isActive(path, it.href);
@@ -213,7 +216,7 @@ export function BottomNav({ items, children }: { items: NavItem[]; children?: Re
             <span className={`grid h-7 w-14 place-items-center rounded-full ${open || inRest ? "bg-accent-soft" : ""}`}>
               <Icon name="more" />
             </span>
-            More
+            {t("More")}
           </button>
         )}
       </nav>

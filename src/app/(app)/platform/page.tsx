@@ -8,10 +8,12 @@ import { onboardHotel } from "@/lib/platform-actions";
 import { Card, PageHeader, Stat } from "@/components/ui";
 import { ActionForm, Input, Select } from "@/components/forms";
 import { SubscriptionBadge } from "@/components/subscription-badge";
+import { getT } from "@/i18n/server";
 
 export const metadata = { title: "Hotels" };
 
 export default async function PlatformPage() {
+  const t = await getT();
   await requirePlatformPage();
   const db = await getDb();
   const today = todayIST();
@@ -39,31 +41,31 @@ export default async function PlatformPage() {
 
   return (
     <>
-      <PageHeader title="Hotels" sub="Every hotel on Hotel Desk, its plan and subscription." />
+      <PageHeader title={t("Hotels")} sub={t("Every hotel on Hotel Desk, its plan and subscription.")} />
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Hotels" value={String(hotels.length)} />
-        <Stat label="Paying" value={String(paying.length)} tone="in" />
-        <Stat label="On trial" value={String(hotels.filter((h) => h.access.state === "trial").length)} />
-        <Stat label="Monthly revenue (MRR)" value={rupees(mrr)} tone="in" hint={`${hotels.filter((h) => h.access.state === "expired").length} expired`} />
+        <Stat label={t("Hotels")} value={String(hotels.length)} />
+        <Stat label={t("Paying")} value={String(paying.length)} tone="in" />
+        <Stat label={t("On trial")} value={String(hotels.filter((h) => h.access.state === "trial").length)} />
+        <Stat label={t("Monthly revenue (MRR)")} value={rupees(mrr)} tone="in" hint={t("{n} expired", { n: hotels.filter((h) => h.access.state === "expired").length })} />
       </div>
 
       <Card className="mb-4">
         <div className="-mx-4 -my-4 overflow-x-auto">
           <table className="tbl">
-            <thead><tr><th>Hotel</th><th>Owner</th><th>Plan</th><th>Status</th><th className="r">Staff</th><th className="r">Logins</th><th>Last entry</th></tr></thead>
+            <thead><tr><th>{t("Hotel")}</th><th>{t("Owner")}</th><th>{t("Plan")}</th><th>{t("Status")}</th><th className="r">{t("Staff")}</th><th className="r">{t("Logins")}</th><th>{t("Last entry")}</th></tr></thead>
             <tbody>
               {hotels.map((h) => (
                 <tr key={h.id}>
                   <td>
                     <Link href={`/platform/hotels/${h.id}`} className="font-medium hover:text-accent">{h.name}</Link>
-                    <div className="text-xs text-muted">HD-{String(h.id).padStart(4, "0")}{h.city ? ` · ${h.city}` : ""}</div>
+                    <div className="text-xs text-muted">{t("HD-")}{String(h.id).padStart(4, "0")}{h.city ? ` · ${h.city}` : ""}</div>
                   </td>
                   <td className="text-muted">{h.owner}</td>
                   <td>{h.plan_name}</td>
                   <td><SubscriptionBadge access={h.access} /></td>
                   <td className="r num">{h.employees}</td>
                   <td className="r num">{h.users}</td>
-                  <td className="text-muted">{h.last_entry ?? "Never"}</td>
+                  <td className="text-muted">{h.last_entry ?? t("Never")}</td>
                 </tr>
               ))}
             </tbody>
@@ -72,23 +74,23 @@ export default async function PlatformPage() {
       </Card>
 
       <details className="rounded-xl border border-line bg-surface">
-        <summary className="cursor-pointer px-4 py-3 text-sm font-semibold">+ Onboard a hotel yourself</summary>
+        <summary className="cursor-pointer px-4 py-3 text-sm font-semibold">{t("+ Onboard a hotel yourself")}</summary>
         <div className="border-t border-line p-4">
-          <p className="mb-3 text-sm text-muted">Hotels can also sign up themselves at /signup. Either way they start on a free trial.</p>
-          <ActionForm action={onboardHotel} submit="Create hotel">
+          <p className="mb-3 text-sm text-muted">{t("Hotels can also sign up themselves at /signup. Either way they start on a free trial.")}</p>
+          <ActionForm action={onboardHotel} submit={t("Create hotel")}>
             <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
-              <Input name="hotelName" label="Hotel name" required />
-              <Input name="city" label="City" required />
-              <Select name="planId" label="Plan" options={plans.map((p) => ({ value: p.id, label: p.name }))} defaultValue={plans.find((p) => p.code === "growth")?.id} />
-              <Input name="ownerName" label="Owner name" required />
-              <Input name="login" label="Owner mobile (login)" required inputMode="numeric" maxLength={10} />
-              <Input name="password" label="Temporary password" type="text" minLength={8} required autoComplete="off" />
+              <Input name="hotelName" label={t("Hotel name")} required />
+              <Input name="city" label={t("City")} required />
+              <Select name="planId" label={t("Plan")} options={plans.map((p) => ({ value: p.id, label: p.name }))} defaultValue={plans.find((p) => p.code === "growth")?.id} />
+              <Input name="ownerName" label={t("Owner name")} required />
+              <Input name="login" label={t("Owner mobile (login)")} required inputMode="numeric" maxLength={10} />
+              <Input name="password" label={t("Temporary password")} type="text" minLength={8} required autoComplete="off" />
             </div>
             <fieldset className="mt-3 flex flex-wrap gap-4 text-sm">
-              <legend className="label">Sections</legend>
-              <label className="inline-flex items-center gap-2"><input type="checkbox" name="hasRestaurant" defaultChecked /> Restaurant</label>
-              <label className="inline-flex items-center gap-2"><input type="checkbox" name="hasRooms" /> Rooms</label>
-              <label className="inline-flex items-center gap-2"><input type="checkbox" name="hasBanquet" /> Banquet</label>
+              <legend className="label">{t("Sections")}</legend>
+              <label className="inline-flex items-center gap-2"><input type="checkbox" name="hasRestaurant" defaultChecked />{" "}{t("Restaurant")}</label>
+              <label className="inline-flex items-center gap-2"><input type="checkbox" name="hasRooms" />{" "}{t("Rooms")}</label>
+              <label className="inline-flex items-center gap-2"><input type="checkbox" name="hasBanquet" />{" "}{t("Banquet")}</label>
             </fieldset>
           </ActionForm>
         </div>

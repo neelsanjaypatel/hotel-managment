@@ -4,26 +4,42 @@ import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { getDb, schema, type DB } from "@/db";
 import { Forbidden, type HotelUser } from "./auth";
 import { addDays, isISODate, toPaise, todayIST } from "./format";
+import type { Vars } from "@/i18n";
 import { ensureDay } from "./ledger";
 
 // Shared by the "use server" action files. Kept out of them so none of these become callable endpoints.
 
-export type FormState = { ok?: string; error?: string; at?: number } | null;
+// `key` and `vars` travel with a message that carries a value ("Paid {amount} to {name}"), so the
+// screen can say it in the reader's language. `ok` / `error` always hold the finished English line.
+export type FormState = { ok?: string; error?: string; key?: string; vars?: Vars; at?: number } | null;
 
-export const ok = (msg: string): FormState => ({ ok: msg, at: Date.now() });
-export const fail = (msg: string): FormState => ({ error: msg, at: Date.now() });
+const fill = (msg: string, vars?: Vars) => (vars ? msg.replace(/\{(\w+)\}/g, (m, k: string) => (k in vars ? String(vars[k]) : m)) : msg);
+
+export const ok = (msg: string, vars?: Vars): FormState => ({ ok: fill(msg, vars), key: vars && msg, vars, at: Date.now() });
+export const fail = (msg: string, vars?: Vars): FormState => ({ error: fill(msg, vars), key: vars && msg, vars, at: Date.now() });
 
 export async function run(fn: () => Promise<FormState>): Promise<FormState> {
   try {
     return await fn();
   } catch (e) {
-    if (e instanceof Forbidden || e instanceof UserError) return fail(e.message);
+    if (e instanceof UserError) return e.key ? fail(e.key, e.vars) : fail(e.message);
+    if (e instanceof Forbidden) return fail(e.message);
     console.error(e);
     return fail("Something went wrong. Please try again.");
   }
 }
 
-export class UserError extends Error {}
+export class UserError extends Error {
+  key?: string;
+  vars?: Vars;
+  constructor(msg: string, vars?: Vars) {
+    super(fill(msg, vars));
+    if (vars) {
+      this.key = msg;
+      this.vars = vars;
+    }
+  }
+}
 
 // Postgres unique_violation. Drizzle wraps the driver error, so the code is on `cause`.
 export function isUniqueViolation(e: unknown): boolean {
@@ -70,11 +86,11 @@ export async function audit(user: HotelUser, action: string, entity: string, ent
 
 // A referenced row (party, employee, category...) must belong to the user's hotel.
 export async function owned<T extends { id: AnyPgColumn; hotelId: AnyPgColumn }>(table: T, id: number, hotelId: number, what: string) {
-  if (!id) throw new UserError(`Choose the ${what}.`);
+  if (!id) throw new UserError("Choose the {what}.", { what });
   const db = await getDb();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [row] = await db.select().from(table as any).where(and(eq(table.id, id), eq(table.hotelId, hotelId)));
-  if (!row) throw new UserError(`Choose the ${what}.`);
+  if (!row) throw new UserError("Choose the {what}.", { what });
   return row as Record<string, unknown>;
 }
 

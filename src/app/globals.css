@@ -86,15 +86,15 @@
   --color-side-active: var(--side-active);
   --color-side-active-ink: var(--side-active-ink);
   --color-side-mark: var(--side-mark);
-  --font-display: var(--font-bricolage), var(--font-geist-sans), sans-serif;
-  --font-sans: var(--font-geist-sans);
+  --font-display: var(--font-bricolage), var(--font-geist-sans), var(--font-deva), var(--font-gujr), sans-serif;
+  --font-sans: var(--font-geist-sans), var(--font-deva), var(--font-gujr);
   --font-mono: var(--font-geist-mono);
 }
 
 body {
   background: var(--bg);
   color: var(--ink);
-  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  font-family: var(--font-geist-sans), var(--font-deva), var(--font-gujr), system-ui, sans-serif;
 }
 
 .num {

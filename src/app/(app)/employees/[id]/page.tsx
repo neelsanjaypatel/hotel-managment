@@ -10,8 +10,10 @@ import { SalaryView } from "@/components/salary";
 import { EmployeeForm } from "../employee-form";
 import { AadhaarReveal } from "../aadhaar-reveal";
 import { maskAadhaar } from "@/lib/secure";
+import { getT } from "@/i18n/server";
 
 export default async function EmployeePage({ params, searchParams }: PageProps<"/employees/[id]">) {
+  const t = await getT();
   const user = await requirePage("viewEmployees");
   const id = Number((await params).id);
   const sp = await searchParams;
@@ -44,9 +46,9 @@ export default async function EmployeePage({ params, searchParams }: PageProps<"
     <>
       <PageHeader
         title={e.name}
-        sub={`${e.code} · ${e.department}${e.designation ? ` · ${e.designation}` : ""}${showPay ? ` · ${rupees(e.rate)}/${e.payType === "monthly" ? "month" : "day"}` : ""}`}
+        sub={`${e.code} · ${e.department}${e.designation ? ` · ${e.designation}` : ""}${showPay ? ` · ${rupees(e.rate)}/${e.payType === "monthly" ? t("month") : t("day")}` : ""}`}
       >
-        <Link href="/employees" className="btn btn-ghost">All employees</Link>
+        <Link href="/employees" className="btn btn-ghost">{t("All employees")}</Link>
         <PeriodPicker name="month" type="month" value={month} max={todayIST().slice(0, 7)} />
       </PageHeader>
       {(e.photoId || (e.aadhaarLast4 && can(user, "manageMaster"))) && (
@@ -59,22 +61,22 @@ export default async function EmployeePage({ params, searchParams }: PageProps<"
       {can(user, "viewPayroll") ? (
         <SalaryView hotelId={user.hotelId} employeeId={e.id} month={month} canEdit={can(user, "manageMaster") && user.access.canWrite && month <= todayIST().slice(0, 7)} />
       ) : (
-        <p className="text-sm text-muted">Salary details are visible to admin and partners only.</p>
+        <p className="text-sm text-muted">{t("Salary details are visible to admin and partners only.")}</p>
       )}
       {history.length > 1 && (
-        <Card title="Salary history" className="mt-4">
+        <Card title={t("Salary history")} className="mt-4">
           <ul className="num space-y-1 text-sm">
             {history.map((h) => (
               <li key={h.id} className="flex justify-between gap-3 sm:max-w-sm">
-                <span className="text-muted">From {prettyDate(h.fromDate)}</span>
-                <span>{rupees(h.rate)}/{e.payType === "monthly" ? "month" : "day"}</span>
+                <span className="text-muted">{t("From {date}", { date: prettyDate(h.fromDate, t.locale) })}</span>
+                <span>{rupees(h.rate)}/{e.payType === "monthly" ? t("month") : t("day")}</span>
               </li>
             ))}
           </ul>
         </Card>
       )}
       {can(user, "manageMaster") && (
-        <Card title="Edit details" className="mt-4">
+        <Card title={t("Edit details")} className="mt-4">
           <EmployeeForm employee={e} login={login} managers={managers} />
         </Card>
       )}

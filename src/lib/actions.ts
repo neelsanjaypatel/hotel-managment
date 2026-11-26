@@ -58,7 +58,7 @@ async function parseSale(user: HotelUser, fd: FormData) {
       .select()
       .from(schema.parties)
       .where(and(eq(schema.parties.hotelId, user.hotelId), eq(schema.parties.name, name)));
-    if (!party) throw new UserError(`${name} party is missing. Ask admin to add it under Dues.`);
+    if (!party) throw new UserError("{name} party is missing. Ask admin to add it under Dues.", { name });
     partyId = party.id;
   } else if (p.data.mode === "credit") {
     partyId = Number(fd.get("partyId"));
@@ -297,7 +297,7 @@ export async function closeDay(_: FormState, fd: FormData): Promise<FormState> {
     });
     await audit(user, "close_day", "day", date, { counted, deposit, nextDay: next?.date, nextOpeningWas: next?.openingCash });
     revalidatePath("/", "layout");
-    return ok(next && next.openingCash !== counted ? `Day closed. Opening cash of ${next.date} updated to match.` : "Day closed.");
+    return next && next.openingCash !== counted ? ok("Day closed. Opening cash of {date} updated to match.", { date: next.date }) : ok("Day closed.");
   });
 }
 
@@ -384,7 +384,7 @@ export async function saveAttendance(_: FormState, fd: FormData): Promise<FormSt
     const n = rows.length;
     await audit(user, "mark_attendance", "attendance", date, { count: n });
     revalidatePath("/", "layout");
-    return ok(`Attendance saved for ${n} ${n === 1 ? "person" : "people"}.`);
+    return n === 1 ? ok("Attendance saved for 1 person.") : ok("Attendance saved for {n} people.", { n });
   });
 }
 
@@ -402,7 +402,7 @@ async function needSlot(tx: Tx, user: HotelUser, kind: "employees" | "logins") {
     .select({ n: sql<number>`count(*)::int` })
     .from(table)
     .where(and(eq(table.hotelId, user.hotelId), eq(table.active, true)));
-  if (r.n >= limit) throw new UserError(`Your ${plan.name} plan allows ${limit} ${kind}. Upgrade from Billing to add more.`);
+  if (r.n >= limit) throw new UserError("Your {plan} plan allows {limit} {kind}. Upgrade from Billing to add more.", { plan: plan.name, limit, kind });
 }
 
 const employeeSchema = z.object({
@@ -527,7 +527,7 @@ export async function saveEmployee(_: FormState, fd: FormData): Promise<FormStat
       throw e;
     }
     revalidatePath("/", "layout");
-    if (!id) return ok(wantLogin ? `Employee added. They log in with ${phone}.` : "Employee added.");
+    if (!id) return wantLogin ? ok("Employee added. They log in with {phone}.", { phone: String(phone) }) : ok("Employee added.");
     return ok("Employee updated.");
   });
 }
@@ -738,7 +738,7 @@ export async function savePartner(_: FormState, fd: FormData): Promise<FormState
       await lockHotel(tx, admin.hotelId);
       const others = await activeShareTotal(tx, admin.hotelId, id ?? undefined);
       if (others + bp > 10000) {
-        throw new UserError(`Shares would add up to ${(others + bp) / 100}%. Total cannot be more than 100%.`);
+        throw new UserError("Shares would add up to {pct}%. Total cannot be more than 100%.", { pct: (others + bp) / 100 });
       }
       const values = { name, phone, shareBp: bp, userId: await syncLogin(tx) };
       if (id) {

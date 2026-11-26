@@ -14,7 +14,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node scripts/migrate.mjs",
     "copy-to-cloud": "tsx scripts/copy-to-cloud.ts",
-    "stress": "tsx scripts/stress-test.ts"
+    "stress": "tsx scripts/stress-test.ts",
+    "i18n": "node scripts/i18n-keys.mjs"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.11",

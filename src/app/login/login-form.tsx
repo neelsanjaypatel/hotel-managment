@@ -3,8 +3,11 @@
 import { useActionState, useTransition } from "react";
 import { loginAction } from "@/lib/actions";
 import { PasswordField } from "@/components/forms";
+import { useT } from "@/i18n/client";
+import { sayState } from "@/i18n";
 
 export function LoginForm() {
+  const t = useT();
   const [state, action, pending] = useActionState(loginAction, null);
   const [, startTransition] = useTransition();
   return (
@@ -17,16 +20,16 @@ export function LoginForm() {
       }}
       className="space-y-3 rounded-xl border border-line bg-surface p-5">
       <label className="block">
-        <span className="label">Mobile, username or email</span>
+        <span className="label">{t("Mobile, username or email")}</span>
         <input name="login" className="field" autoComplete="username" required autoFocus />
       </label>
       <label className="block">
-        <span className="label">Password</span>
+        <span className="label">{t("Password")}</span>
         <PasswordField name="password" autoComplete="current-password" required />
       </label>
-      {state?.error && <p className="text-sm text-danger">{state.error}</p>}
+      {state?.error && <p className="text-sm text-danger">{sayState(t, state)}</p>}
       <button className="btn btn-lg w-full" disabled={pending}>
-        {pending ? "Checking..." : "Log in"}
+        {pending ? t("Checking...") : t("Log in")}
       </button>
     </form>
   );

@@ -5,12 +5,14 @@ import { rupees, todayIST, isMonth } from "@/lib/format";
 import { Empty, PageHeader } from "@/components/ui";
 import { PeriodPicker } from "@/components/forms";
 import { SalaryView } from "@/components/salary";
+import { getT } from "@/i18n/server";
 
 export const metadata = { title: "My Salary" };
 
 export default async function MePage({ searchParams }: PageProps<"/me">) {
+  const t = await getT();
   const user = await requirePage();
-  if (!user.employeeId) return <Empty>Your login is not linked to an employee record.</Empty>;
+  if (!user.employeeId) return <Empty>{t("Your login is not linked to an employee record.")}</Empty>;
   const sp = await searchParams;
   const month = isMonth(sp.month) ? sp.month : todayIST().slice(0, 7);
   const db = await getDb();
@@ -18,10 +20,10 @@ export default async function MePage({ searchParams }: PageProps<"/me">) {
     .select()
     .from(schema.employees)
     .where(and(eq(schema.employees.hotelId, user.hotelId), eq(schema.employees.id, user.employeeId)));
-  if (!e) return <Empty>Your login is not linked to an employee record.</Empty>;
+  if (!e) return <Empty>{t("Your login is not linked to an employee record.")}</Empty>;
   return (
     <>
-      <PageHeader title="My Salary" sub={e ? `${e.name} · ${e.department} · ${e.payType === "monthly" ? `${rupees(e.rate)}/month` : `${rupees(e.rate)}/day`}` : undefined}>
+      <PageHeader title={t("My Salary")} sub={e ? `${e.name} · ${e.department} · ${e.payType === "monthly" ? `${rupees(e.rate)}/month` : `${rupees(e.rate)}/day`}` : undefined}>
         <PeriodPicker name="month" type="month" value={month} max={todayIST().slice(0, 7)} />
       </PageHeader>
       <SalaryView hotelId={user.hotelId} employeeId={e.id} month={month} />

@@ -5,6 +5,7 @@ import { ActionForm, Input, Select } from "@/components/forms";
 import { createBooking, updateBooking } from "@/lib/booking-actions";
 import { PAY_MODE_LABEL, SLOT_LABEL, UNIT_LABEL, rupees, rupeesPlain, toPaise } from "@/lib/format";
 import type { Booking } from "@/db/schema";
+import { useT } from "@/i18n/client";
 
 const opts = (m: Record<string, string>) => Object.entries(m).map(([value, label]) => ({ value, label }));
 
@@ -25,6 +26,7 @@ export function BookingForm({
   booking?: Booking;
   customer?: { name: string; phone: string | null };
 }) {
+  const t = useT();
   const b = booking;
   const [unit, setUnit] = useState<string>(b?.unit ?? (units.includes("banquet") ? "banquet" : units[0]));
   const [date, setDate] = useState(b?.date ?? "");
@@ -41,46 +43,46 @@ export function BookingForm({
   const suggested = r && g && n ? r * g * n : null;
 
   return (
-    <ActionForm action={b ? updateBooking : createBooking} submit={b ? "Save changes" : "Save booking"} resetOnOk={false}>
+    <ActionForm action={b ? updateBooking : createBooking} submit={b ? t("Save changes") : t("Save booking")} resetOnOk={false}>
       {b && <input type="hidden" name="id" value={b.id} />}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         {!b && (
           <>
-            <Input name="customer" label="Customer name" required />
-            <Input name="phone" label="Customer mobile" inputMode="numeric" maxLength={10} placeholder="for WhatsApp slip" />
+            <Input name="customer" label={t("Customer name")} required />
+            <Input name="phone" label={t("Customer mobile")} inputMode="numeric" maxLength={10} placeholder={t("for WhatsApp slip")} />
           </>
         )}
-        {b && <Input name="phone" label="Customer mobile" inputMode="numeric" maxLength={10} defaultValue={customer?.phone ?? ""} />}
-        <Select name="unit" label="Booking for" options={opts(UNIT_LABEL).filter((o) => units.includes(o.value))} defaultValue={unit} onChange={setUnit} />
+        {b && <Input name="phone" label={t("Customer mobile")} inputMode="numeric" maxLength={10} defaultValue={customer?.phone ?? ""} />}
+        <Select name="unit" label={t("Booking for")} options={opts(UNIT_LABEL).filter((o) => units.includes(o.value))} defaultValue={unit} onChange={setUnit} />
         <div className={b ? "" : "col-span-2 md:col-span-1"}>
-          <Input name="title" label="Occasion / details" required defaultValue={b?.title} placeholder={rooms ? "2 deluxe rooms" : "Wedding reception"} />
+          <Input name="title" label={t("Occasion / details")} required defaultValue={b?.title} placeholder={rooms ? t("2 deluxe rooms") : t("Wedding reception")} />
         </div>
-        <Input name="date" label={rooms ? "Check-in" : "Date"} type="date" required min={b ? undefined : today} value={date} onChange={(e) => setDate(e.target.value)} />
+        <Input name="date" label={rooms ? t("Check-in") : t("Date")} type="date" required min={b ? undefined : today} value={date} onChange={(e) => setDate(e.target.value)} />
         {rooms ? (
-          <Input name="endDate" label="Check-out" type="date" required min={date || today} value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+          <Input name="endDate" label={t("Check-out")} type="date" required min={date || today} value={endDate} onChange={(e) => setEndDate(e.target.value)} />
         ) : (
-          <Select name="slot" label="Time" options={opts(SLOT_LABEL)} defaultValue={b?.slot ?? "dinner"} />
+          <Select name="slot" label={t("Time")} options={opts(SLOT_LABEL)} defaultValue={b?.slot ?? "dinner"} />
         )}
-        <Input name="venue" label={rooms ? "Room numbers" : "Hall / area"} defaultValue={b?.venue ?? ""} placeholder={rooms ? "101, 102" : "Main hall"} />
-        <Input name="guests" label={rooms ? "Rooms" : "Guests / plates"} inputMode="numeric" value={guests} onChange={(e) => setGuests(e.target.value)} />
-        <Input name="rate" label={rooms ? "Rate per room per night (₹)" : "Rate per plate (₹)"} inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} />
+        <Input name="venue" label={rooms ? t("Room numbers") : t("Hall / area")} defaultValue={b?.venue ?? ""} placeholder={rooms ? "101, 102" : t("Main hall")} />
+        <Input name="guests" label={rooms ? t("Rooms") : t("Guests / plates")} inputMode="numeric" value={guests} onChange={(e) => setGuests(e.target.value)} />
+        <Input name="rate" label={rooms ? t("Rate per room per night (₹)") : t("Rate per plate (₹)")} inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} />
         <div>
-          <Input name="totalAmount" label="Total amount (₹)" inputMode="decimal" required value={total} onChange={(e) => setTotal(e.target.value)} />
+          <Input name="totalAmount" label={t("Total amount (₹)")} inputMode="decimal" required value={total} onChange={(e) => setTotal(e.target.value)} />
           {suggested != null && rupeesPlain(suggested) !== total && (
             <button type="button" className="mt-1 text-xs text-accent" onClick={() => setTotal(rupeesPlain(suggested))}>
-              Use {rupees(suggested)}{rooms ? ` (${n} night${n === 1 ? "" : "s"})` : ""}
+              {t("Use {amount}", { amount: rupees(suggested) })}{rooms ? ` (${n === 1 ? t("1 night") : t("{n} nights", { n })})` : ""}
             </button>
           )}
         </div>
-        <Select name="status" label="Status" options={[{ value: "confirmed", label: "Confirmed" }, { value: "tentative", label: "Tentative (on hold)" }]} defaultValue={b?.status ?? "confirmed"} />
+        <Select name="status" label={t("Status")} options={[{ value: "confirmed", label: t("Confirmed") }, { value: "tentative", label: t("Tentative (on hold)") }]} defaultValue={b?.status ?? "confirmed"} />
         {!b && (
           <>
-            <Input name="advance" label="Advance received now (₹)" inputMode="decimal" placeholder="0" />
-            <Select name="advanceMode" label="Advance paid by" options={opts(PAY_MODE_LABEL)} defaultValue="upi" />
+            <Input name="advance" label={t("Advance received now (₹)")} inputMode="decimal" placeholder="0" />
+            <Select name="advanceMode" label={t("Advance paid by")} options={opts(PAY_MODE_LABEL)} defaultValue="upi" />
           </>
         )}
         <div className="col-span-2 md:col-span-4">
-          <Input name="notes" label="Notes (menu, decoration, special requests)" defaultValue={b?.notes ?? ""} />
+          <Input name="notes" label={t("Notes (menu, decoration, special requests)")} defaultValue={b?.notes ?? ""} />
         </div>
       </div>
     </ActionForm>

@@ -37,7 +37,7 @@ export async function paySalary(_: FormState, fd: FormData): Promise<FormState> 
     );
     await audit(user, "create", "salary", row.id, row);
     revalidatePath("/", "layout");
-    return ok(`Paid ${rupees(row.amount)} to ${emp.name} for ${prettyMonth(month)}.`);
+    return ok("Paid {amount} to {name} for {month}.", { amount: rupees(row.amount), name: String(emp.name), month: prettyMonth(month) });
   });
 }
 
@@ -71,7 +71,7 @@ export async function payAllSalaries(_: FormState, fd: FormData): Promise<FormSt
     const total = rows.reduce((a, r) => a + r.amount, 0);
     await audit(user, "pay_all_salaries", "salary", month, { count: rows.length, total, paidVia });
     revalidatePath("/", "layout");
-    return ok(`Paid ${rupees(total)} to ${rows.length} employees for ${prettyMonth(month)}.`);
+    return ok("Paid {amount} to {n} employees for {month}.", { amount: rupees(total), n: rows.length, month: prettyMonth(month) });
   });
 }
 
@@ -96,7 +96,7 @@ export async function addAdjustment(_: FormState, fd: FormData): Promise<FormSta
       .returning();
     await audit(user, "create", "adjustment", row.id, row);
     revalidatePath("/", "layout");
-    return ok(`${KIND_LABEL[kind.data]} of ${rupees(row.amount)} added for ${emp.name}.`);
+    return ok("{kind} of {amount} added for {name}.", { kind: KIND_LABEL[kind.data], amount: rupees(row.amount), name: String(emp.name) });
   });
 }
 
@@ -115,7 +115,7 @@ export async function setLoanCut(_: FormState, fd: FormData): Promise<FormState>
     await db.transaction(async (tx) => {
       await lockHotel(tx, user.hotelId);
       const [row] = await monthPayroll(user.hotelId, month, { employeeIds: [employeeId] }, tx as unknown as DB);
-      if (cut > row.loanOpen) throw new UserError(`Loan balance is only ${rupees(row.loanOpen)}.`);
+      if (cut > row.loanOpen) throw new UserError("Loan balance is only {amount}.", { amount: rupees(row.loanOpen) });
       await tx.delete(adj).where(and(eq(adj.hotelId, user.hotelId), eq(adj.employeeId, employeeId), eq(adj.month, month), eq(adj.kind, "loan")));
       if (cut > 0) {
         await tx.insert(adj).values({ hotelId: user.hotelId, employeeId, month, kind: "loan", amount: cut, note: "From this month's salary", createdBy: user.id });
@@ -123,7 +123,7 @@ export async function setLoanCut(_: FormState, fd: FormData): Promise<FormState>
     });
     await audit(user, "loan_cut", "employee", employeeId, { month, cut });
     revalidatePath("/", "layout");
-    return ok(cut ? `${rupees(cut)} will be cut from ${emp.name}'s ${prettyMonth(month)} salary.` : "No loan cut this month.");
+    return cut ? ok("{amount} will be cut from {name}'s {month} salary.", { amount: rupees(cut), name: String(emp.name), month: prettyMonth(month) }) : ok("No loan cut this month.");
   });
 }
 

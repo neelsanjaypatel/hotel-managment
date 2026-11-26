@@ -9,6 +9,7 @@ import { Badge, Card, Empty, PageHeader, Stat } from "@/components/ui";
 import { ActButton, ActionForm, Input, PeriodPicker } from "@/components/forms";
 import { AdvanceForm, EntryPanel, ExpenseForm, PaidEditForm, ReceiptForm, SaleForm, TransferForm } from "./entry-forms";
 import { CloseDayForm } from "./close-day";
+import { getT } from "@/i18n/server";
 
 export const metadata = { title: "Daily Counter" };
 
@@ -26,6 +27,7 @@ const KIND: Record<Kind, { label: string; tone: "ok" | "out" | "warn" | "neutral
 };
 
 export default async function CounterPage({ searchParams }: PageProps<"/counter">) {
+  const t = await getT();
   const user = await requirePage();
   if (user.role === "employee") return null;
   const sp = await searchParams;
@@ -37,7 +39,7 @@ export default async function CounterPage({ searchParams }: PageProps<"/counter"
 
   const h = user.hotelId;
   const day = await getDay(h, date, db);
-  const [t, saleRows, expRows, advRows, recRows, salRows, partyRows, empRows, catRows, closer, priorClosed, usage, supRows, drawRows, trRows, supplierList, [marked]] = await Promise.all([
+  const [tot, saleRows, expRows, advRows, recRows, salRows, partyRows, empRows, catRows, closer, priorClosed, usage, supRows, drawRows, trRows, supplierList, [marked]] = await Promise.all([
     rangeTotals(h, date, date, db),
     db.select({ s: sales, party: parties.name }).from(sales).leftJoin(parties, eq(parties.id, sales.partyId)).where(and(eq(sales.hotelId, h), eq(sales.date, date))),
     db
@@ -104,7 +106,7 @@ export default async function CounterPage({ searchParams }: PageProps<"/counter"
   );
   const canChange = (kind: Kind, createdBy: number) =>
     canEnter && (user.role === "admin" || createdBy === user.id) && ((kind !== "salary" && kind !== "drawing") || can(user, "manageMaster"));
-  const expectedBeforeDeposit = day.openingCash + t.cashIn - t.cashOut;
+  const expectedBeforeDeposit = day.openingCash + tot.cashIn - tot.cashOut;
 
   // "Food > Dairy" style labels, children listed under their parent.
   const catName = new Map(catRows.map((c) => [c.id, c.name]));
@@ -128,32 +130,32 @@ export default async function CounterPage({ searchParams }: PageProps<"/counter"
   const entries = [
     ...saleRows.map(({ s, party }) => ({
       kind: "sale" as const, row: s, linked: !!s.bookingId,
-      title: `${UNIT_LABEL[s.unit]} · ${SALE_MODE_LABEL[s.mode]}${party && s.mode === "credit" ? ` · ${party}` : ""}`,
+      title: `${t(UNIT_LABEL[s.unit])} · ${t(SALE_MODE_LABEL[s.mode])}${party && s.mode === "credit" ? ` · ${party}` : ""}`,
       sub: s.reference,
     })),
     ...expRows.map(({ e, cat, parentId, worker, supplier }) => ({
       kind: "expense" as const, row: e, linked: false,
-      title: `${parentId ? `${catName.get(parentId)} › ` : ""}${cat} · ${payLabel(e.paidVia)}`,
+      title: `${parentId ? `${catName.get(parentId)} › ` : ""}${cat} · ${t(payLabel(e.paidVia))}`,
       sub: [worker ?? supplier ?? e.vendor, e.note].filter(Boolean).join(" · "),
     })),
     ...advRows.map(({ a, name }) => ({
-      kind: "advance" as const, row: a, linked: false, title: `${name} · ${PAY_MODE_LABEL[a.paidVia]}`,
-      sub: [a.installment == null ? null : a.installment ? `Loan, ${rupees(a.installment)}/month` : "Loan", a.note].filter(Boolean).join(" · "),
+      kind: "advance" as const, row: a, linked: false, title: `${name} · ${t(PAY_MODE_LABEL[a.paidVia])}`,
+      sub: [a.installment == null ? null : a.installment ? t("Loan, {amount}/month", { amount: rupees(a.installment) }) : t("Loan"), a.note].filter(Boolean).join(" · "),
     })),
     ...recRows.map(({ r, party }) => ({
       kind: "receipt" as const, row: r, linked: !!r.bookingId,
-      title: `${party} · ${PAY_MODE_LABEL[r.mode]}`,
+      title: `${party} · ${t(PAY_MODE_LABEL[r.mode])}`,
       sub: [r.commission ? `+ ${rupees(r.commission)} commission` : null, r.note].filter(Boolean).join(" · "),
     })),
     ...salRows.map(({ p, name }) => ({
       kind: "salary" as const, row: p, linked: false,
-      title: `${name} · ${PAY_MODE_LABEL[p.paidVia]}`, sub: `For ${prettyMonth(p.month)}${p.note ? ` · ${p.note}` : ""}`,
+      title: `${name} · ${t(PAY_MODE_LABEL[p.paidVia])}`, sub: `${t("For {month}", { month: prettyMonth(p.month, t.locale) })}${p.note ? ` · ${p.note}` : ""}`,
     })),
-    ...supRows.map(({ p, name }) => ({ kind: "supplier" as const, row: p, linked: false, title: `${name} · ${PAY_MODE_LABEL[p.paidVia]}`, sub: p.note })),
-    ...drawRows.map(({ p, name }) => ({ kind: "drawing" as const, row: p, linked: false, title: `${name} · ${PAY_MODE_LABEL[p.paidVia]}`, sub: p.note })),
+    ...supRows.map(({ p, name }) => ({ kind: "supplier" as const, row: p, linked: false, title: `${name} · ${t(PAY_MODE_LABEL[p.paidVia])}`, sub: p.note })),
+    ...drawRows.map(({ p, name }) => ({ kind: "drawing" as const, row: p, linked: false, title: `${name} · ${t(PAY_MODE_LABEL[p.paidVia])}`, sub: p.note })),
     ...trRows.map((x) => ({
       kind: "transfer" as const, row: x, linked: false,
-      title: x.direction === "to_bank" ? "Cash deposited to bank" : "Cash drawn from bank", sub: x.note,
+      title: x.direction === "to_bank" ? t("Cash deposited to bank") : t("Cash drawn from bank"), sub: x.note,
     })),
   ].sort((a, b) => b.row.createdAt.getTime() - a.row.createdAt.getTime());
   const time = new Intl.DateTimeFormat("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" });
@@ -161,36 +163,36 @@ export default async function CounterPage({ searchParams }: PageProps<"/counter"
   return (
     <>
       <PageHeader
-        title="Daily Counter"
+        title={t("Daily Counter")}
         sub={
           <span className="inline-flex items-center gap-2">
-            {prettyDate(date)} <Badge tone={open ? "ok" : "neutral"}>{open ? "Open" : "Closed"}</Badge>
+            {prettyDate(date, t.locale)} <Badge tone={open ? "ok" : "neutral"}>{open ? t("Open") : t("Closed")}</Badge>
           </span>
         }
       >
         <span className="flex items-center gap-2">
-          <Link className="btn btn-ghost px-3" href={`?date=${addDays(date, -1)}`} aria-label="Previous day">‹</Link>
+          <Link className="btn btn-ghost px-3" href={`?date=${addDays(date, -1)}`} aria-label={t("Previous day")}>‹</Link>
           <PeriodPicker name="date" value={date} max={today} />
-          {date < today && <Link className="btn btn-ghost px-3" href={`?date=${addDays(date, 1)}`} aria-label="Next day">›</Link>}
+          {date < today && <Link className="btn btn-ghost px-3" href={`?date=${addDays(date, 1)}`} aria-label={t("Next day")}>›</Link>}
         </span>
       </PageHeader>
 
       <div className="grid grid-cols-3 gap-2 sm:gap-3">
-        <Stat label="Income" value={rupees(t.income)} tone="in" />
-        <Stat label="Expense" value={rupees(t.expense)} tone="out" />
-        <Stat label="Cash in drawer" value={rupees(expectedBeforeDeposit - (open ? 0 : day.cashDeposit))} hint="Should be, right now" />
+        <Stat label={t("Income")} value={rupees(tot.income)} tone="in" />
+        <Stat label={t("Expense")} value={rupees(tot.expense)} tone="out" />
+        <Stat label={t("Cash in drawer")} value={rupees(expectedBeforeDeposit - (open ? 0 : day.cashDeposit))} hint={t("Should be, right now")} />
       </div>
       <details className="mt-2 rounded-xl border border-line bg-surface">
-        <summary className="cursor-pointer px-4 py-2.5 text-sm text-muted">All totals for the day</summary>
+        <summary className="cursor-pointer px-4 py-2.5 text-sm text-muted">{t("All totals for the day")}</summary>
         <dl className="num grid grid-cols-2 gap-x-6 gap-y-1.5 border-t border-line px-4 py-3 text-sm sm:grid-cols-4">
-          <div><dt className="text-xs text-muted">Net for the day</dt><dd className={t.net >= 0 ? "text-income" : "text-expense"}>{rupees(t.net)}</dd></div>
-          <div><dt className="text-xs text-muted">Cash received</dt><dd>{rupees(t.cashIn)}</dd></div>
-          <div><dt className="text-xs text-muted">Paid out in cash</dt><dd>{rupees(t.cashOut)}</dd></div>
-          <div><dt className="text-xs text-muted">Opening cash</dt><dd>{rupees(day.openingCash)}</dd></div>
-          <div><dt className="text-xs text-muted">Bank / UPI / card in</dt><dd>{rupees(t.bankIn)}</dd></div>
-          <div><dt className="text-xs text-muted">Paid from bank</dt><dd>{rupees(t.bankOut)}</dd></div>
-          <div><dt className="text-xs text-muted">Zomato / Swiggy / credit</dt><dd>{rupees(t.onCredit)}</dd></div>
-          <div><dt className="text-xs text-muted">Advances / salary paid</dt><dd>{rupees(t.advances)} / {rupees(t.salaryPaid)}</dd></div>
+          <div><dt className="text-xs text-muted">{t("Net for the day")}</dt><dd className={tot.net >= 0 ? "text-income" : "text-expense"}>{rupees(tot.net)}</dd></div>
+          <div><dt className="text-xs text-muted">{t("Cash received")}</dt><dd>{rupees(tot.cashIn)}</dd></div>
+          <div><dt className="text-xs text-muted">{t("Paid out in cash")}</dt><dd>{rupees(tot.cashOut)}</dd></div>
+          <div><dt className="text-xs text-muted">{t("Opening cash")}</dt><dd>{rupees(day.openingCash)}</dd></div>
+          <div><dt className="text-xs text-muted">{t("Bank / UPI / card in")}</dt><dd>{rupees(tot.bankIn)}</dd></div>
+          <div><dt className="text-xs text-muted">{t("Paid from bank")}</dt><dd>{rupees(tot.bankOut)}</dd></div>
+          <div><dt className="text-xs text-muted">{t("Zomato / Swiggy / credit")}</dt><dd>{rupees(tot.onCredit)}</dd></div>
+          <div><dt className="text-xs text-muted">{t("Advances / salary paid")}</dt><dd>{rupees(tot.advances)} / {rupees(tot.salaryPaid)}</dd></div>
         </dl>
       </details>
 
@@ -199,7 +201,7 @@ export default async function CounterPage({ searchParams }: PageProps<"/counter"
           href="/attendance"
           className="mt-3 block rounded-lg bg-warn-soft px-4 py-2.5 text-sm font-medium text-warn"
         >
-          Attendance not marked yet for {unmarked} {unmarked === 1 ? "person" : "people"} today ›
+          {unmarked === 1 ? t("Attendance not marked yet for 1 person today") : t("Attendance not marked yet for {n} people today", { n: unmarked })} ›
         </Link>
       )}
 
@@ -221,18 +223,18 @@ export default async function CounterPage({ searchParams }: PageProps<"/counter"
           can(user, "enterCounter") && (
             <p className="rounded-lg border border-line bg-surface-2 px-4 py-3 text-sm text-muted">
               {!user.access.canWrite
-                ? "Subscription has ended. Entries are locked until it is renewed."
+                ? t("Subscription has ended. Entries are locked until it is renewed.")
                 : open
-                  ? "Only admin can enter for older dates."
-                  : "This day is closed. Entries are locked."}
+                  ? t("Only admin can enter for older dates.")
+                  : t("This day is closed. Entries are locked.")}
             </p>
           )
         )}
       </div>
 
-      <Card title={`Entries (${entries.length})`} className="mt-4">
+      <Card title={t("Entries ({n})", { n: entries.length })} className="mt-4">
         {entries.length === 0 ? (
-          <Empty>Nothing entered for this day yet.</Empty>
+          <Empty>{t("Nothing entered for this day yet.")}</Empty>
         ) : (
           <ul className="-mx-4 -my-4 divide-y divide-line">
             {entries.map((en) => {
@@ -241,14 +243,14 @@ export default async function CounterPage({ searchParams }: PageProps<"/counter"
                 <div className="flex items-start justify-between gap-3 px-4 py-3">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2 text-sm">
-                      <Badge tone={k.tone}>{k.label}</Badge>
+                      <Badge tone={k.tone}>{t(k.label)}</Badge>
                       <span className="font-medium">{en.title}</span>
                       {en.kind === "expense" && en.row.attachmentId && (
-                        <a href={`/files/${en.row.attachmentId}`} target="_blank" rel="noopener" className="text-xs text-accent underline underline-offset-2">Bill</a>
+                        <a href={`/files/${en.row.attachmentId}`} target="_blank" rel="noopener" className="text-xs text-accent underline underline-offset-2">{t("Bill")}</a>
                       )}
                     </div>
                     <div className="mt-0.5 truncate text-xs text-muted">
-                      {time.format(en.row.createdAt)}{en.sub ? ` · ${en.sub}` : ""}{en.linked ? " · from booking" : ""}
+                      {time.format(en.row.createdAt)}{en.sub ? ` · ${en.sub}` : ""}{en.linked ? t(" · from booking") : ""}
                     </div>
                   </div>
                   <div className={`num shrink-0 text-right font-semibold ${en.kind === "transfer" ? "" : k.sign > 0 ? "text-income" : "text-expense"}`}>
@@ -282,7 +284,7 @@ export default async function CounterPage({ searchParams }: PageProps<"/counter"
                       {(en.kind === "salary" || en.kind === "supplier" || en.kind === "drawing") && <PaidEditForm action={update} initial={initial} />}
                       {en.kind === "transfer" && <TransferForm date={date} action={update} initial={initial} />}
                       <div className="mt-3 border-t border-line pt-3">
-                        <ActButton run={deleteEntry.bind(null, en.kind, en.row.id)} label={`Delete this ${k.label.toLowerCase()}`} confirm={`Delete this ${k.label.toLowerCase()}?`} />
+                        <ActButton run={deleteEntry.bind(null, en.kind, en.row.id)} label={t("Delete this {kind}", { kind: t(k.label).toLowerCase() })} confirm={t("Delete this {kind}?", { kind: t(k.label).toLowerCase() })} />
                       </div>
                     </div>
                   </details>
@@ -293,44 +295,44 @@ export default async function CounterPage({ searchParams }: PageProps<"/counter"
         )}
       </Card>
 
-      <Card title="Cash drawer" className="mt-4">
+      <Card title={t("Cash drawer")} className="mt-4">
         <dl className="num grid grid-cols-2 gap-x-6 gap-y-1 text-sm sm:max-w-md">
-          <dt className="text-muted">Opening cash</dt><dd className="text-right">{rupees(day.openingCash)}</dd>
-          <dt className="text-muted">+ Cash received</dt><dd className="text-right text-income">{rupees(t.cashIn)}</dd>
-          <dt className="text-muted">- Cash paid out</dt><dd className="text-right text-expense">{rupees(t.cashOut)}</dd>
-          {!open && <><dt className="text-muted">- Deposited to bank</dt><dd className="text-right">{rupees(day.cashDeposit)}</dd></>}
-          <dt className="border-t border-line pt-1 font-medium">Should be in drawer</dt>
+          <dt className="text-muted">{t("Opening cash")}</dt><dd className="text-right">{rupees(day.openingCash)}</dd>
+          <dt className="text-muted">{t("+ Cash received")}</dt><dd className="text-right text-income">{rupees(tot.cashIn)}</dd>
+          <dt className="text-muted">{t("- Cash paid out")}</dt><dd className="text-right text-expense">{rupees(tot.cashOut)}</dd>
+          {!open && <><dt className="text-muted">{t("- Deposited to bank")}</dt><dd className="text-right">{rupees(day.cashDeposit)}</dd></>}
+          <dt className="border-t border-line pt-1 font-medium">{t("Should be in drawer")}</dt>
           <dd className="border-t border-line pt-1 text-right font-semibold">{rupees(expectedBeforeDeposit - (open ? 0 : day.cashDeposit))}</dd>
           {!open && day.countedCash != null && (() => {
             const diff = day.countedCash - (expectedBeforeDeposit - day.cashDeposit);
             return (
               <>
-                <dt className="text-muted">Counted</dt><dd className="text-right">{rupees(day.countedCash)}</dd>
-                <dt className="text-muted">Difference</dt>
-                <dd className={`text-right font-semibold ${diff === 0 ? "text-income" : diff < 0 ? "text-danger" : "text-warn"}`}>{diff === 0 ? "Matches" : rupees(diff)}</dd>
+                <dt className="text-muted">{t("Counted")}</dt><dd className="text-right">{rupees(day.countedCash)}</dd>
+                <dt className="text-muted">{t("Difference")}</dt>
+                <dd className={`text-right font-semibold ${diff === 0 ? "text-income" : diff < 0 ? "text-danger" : "text-warn"}`}>{diff === 0 ? t("Matches") : rupees(diff)}</dd>
               </>
             );
           })()}
         </dl>
         {!open && (
           <p className="mt-3 text-xs text-muted">
-            Closed by {closer[0]?.name ?? "-"}{day.note ? ` · ${day.note}` : ""}
+            {t("Closed by {name}", { name: closer[0]?.name ?? "-" })}{day.note ? ` · ${day.note}` : ""}
           </p>
         )}
         {canEnter && firstDay && user.role === "admin" && (
           <div className="mt-4 border-t border-line pt-4">
-            <p className="mb-2 text-sm text-muted">First day: enter the cash already in the drawer before you started using Hotel Desk.</p>
-            <ActionForm action={setOpeningCash} submit="Save opening cash" resetOnOk={false}>
+            <p className="mb-2 text-sm text-muted">{t("First day: enter the cash already in the drawer before you started using Hotel Desk.")}</p>
+            <ActionForm action={setOpeningCash} submit={t("Save opening cash")} resetOnOk={false}>
               <input type="hidden" name="date" value={date} />
               <div className="sm:max-w-xs">
-                <Input name="openingCash" label="Opening cash (₹)" inputMode="decimal" defaultValue={rupeesPlain(day.openingCash)} required />
+                <Input name="openingCash" label={t("Opening cash (₹)")} inputMode="decimal" defaultValue={rupeesPlain(day.openingCash)} required />
               </div>
             </ActionForm>
           </div>
         )}
         {canEnter && (
           <details className="mt-4 border-t border-line pt-3">
-            <summary className="cursor-pointer text-sm font-medium text-accent">Move cash ↔ bank during the day</summary>
+            <summary className="cursor-pointer text-sm font-medium text-accent">{t("Move cash ↔ bank during the day")}</summary>
             <div className="mt-3">
               <TransferForm date={date} />
             </div>
@@ -343,7 +345,7 @@ export default async function CounterPage({ searchParams }: PageProps<"/counter"
         )}
         {!open && can(user, "reopenDay") && user.access.canWrite && (
           <div className="mt-3">
-            <ActButton run={reopenDay.bind(null, date)} label="Reopen this day" confirm="Reopen this day for corrections?" className="btn btn-ghost" />
+            <ActButton run={reopenDay.bind(null, date)} label={t("Reopen this day")} confirm={t("Reopen this day for corrections?")} className="btn btn-ghost" />
           </div>
         )}
       </Card>

@@ -5,6 +5,8 @@ import { getDb, schema } from "@/db";
 import { addDays, isISODate, prettyDate, rupees, todayIST } from "@/lib/format";
 import { Badge, Card, Empty, PageHeader } from "@/components/ui";
 import { PeriodPicker } from "@/components/forms";
+import { getT } from "@/i18n/server";
+import type { T } from "@/i18n";
 
 export const metadata = { title: "Activity log" };
 
@@ -56,7 +58,8 @@ type Data = Record<string, unknown> | null;
 const money = (v: unknown) => (typeof v === "number" ? rupees(v) : null);
 
 // One readable line from the stored audit payload.
-function describe(action: string, entity: string, entityId: string | null, data: Data) {
+function describe(t: T, action: string, entity: string, entityId: string | null, data: Data) {
+  const what = t(ENTITY[entity] ?? entity);
   const d = (data ?? {}) as Record<string, unknown>;
   if (action === "update" && d.before && d.after) {
     const before = d.before as Record<string, unknown>;
@@ -65,22 +68,23 @@ function describe(action: string, entity: string, entityId: string | null, data:
       (k) => !["createdAt", "markedAt"].includes(k) && JSON.stringify(after[k]) !== JSON.stringify(before[k]),
     );
     const parts = changed.map((k) => {
-      const fmt = (v: unknown) => (k === "amount" ? money(v) : v == null || v === "" ? "blank" : String(v));
+      const fmt = (v: unknown) => (k === "amount" ? money(v) : v == null || v === "" ? t("blank") : String(v));
       return `${k}: ${fmt(before[k])} → ${fmt(after[k])}`;
     });
-    return `${ENTITY[entity] ?? entity}${parts.length ? ` · ${parts.join(", ")}` : " · no change"}`;
+    return `${what}${parts.length ? ` · ${parts.join(", ")}` : ` · ${t("no change")}`}`;
   }
-  if (action === "close_day") return `${entityId} · counted ${money(d.counted)}${d.deposit ? `, deposited ${money(d.deposit)}` : ""}`;
+  if (action === "close_day") return `${entityId} · ${t("counted {amount}", { amount: money(d.counted) ?? "-" })}${d.deposit ? `, ${t("deposited {amount}", { amount: money(d.deposit) ?? "-" })}` : ""}`;
   if (action === "reopen_day") return String(entityId);
   if (action === "set_opening_cash") return `${entityId} · ${money(d.cash)}`;
-  if (action === "mark_attendance") return `${entityId} · ${d.count} ${d.count === 1 ? "person" : "people"}`;
-  if (action === "pay_all_salaries") return `${entityId} · ${d.count} employees, ${money(d.total)}`;
+  if (action === "mark_attendance") return `${entityId} · ${d.count === 1 ? t("1 person") : t("{n} people", { n: Number(d.count) })}`;
+  if (action === "pay_all_salaries") return `${entityId} · ${t("{n} employees", { n: Number(d.count) })}, ${money(d.total)}`;
   const amount = money(d.amount) ?? money(d.bill) ?? money(d.counted);
   const who = (d.name as string) ?? (d.title as string) ?? (d.reference as string) ?? (d.vendor as string) ?? (d.note as string) ?? "";
-  return [ENTITY[entity] ?? entity, amount, who].filter(Boolean).join(" · ");
+  return [what, amount, who].filter(Boolean).join(" · ");
 }
 
 export default async function ActivityPage({ searchParams }: PageProps<"/activity">) {
+  const t = await getT();
   const user = await requirePage("viewPayroll");
   const sp = await searchParams;
   const today = todayIST();
@@ -102,30 +106,30 @@ export default async function ActivityPage({ searchParams }: PageProps<"/activit
 
   return (
     <>
-      <PageHeader title="Activity log" sub={`${prettyDate(date)} · who added, changed or deleted what`}>
-        <Link className="btn btn-ghost" href={`?date=${addDays(date, -1)}${onlyChanges ? "&show=changes" : ""}`} aria-label="Previous day">‹</Link>
+      <PageHeader title={t("Activity log")} sub={`${prettyDate(date, t.locale)} · ${t("who added, changed or deleted what")}`}>
+        <Link className="btn btn-ghost" href={`?date=${addDays(date, -1)}${onlyChanges ? "&show=changes" : ""}`} aria-label={t("Previous day")}>‹</Link>
         <PeriodPicker name="date" value={date} max={today} />
-        {date < today && <Link className="btn btn-ghost" href={`?date=${addDays(date, 1)}${onlyChanges ? "&show=changes" : ""}`} aria-label="Next day">›</Link>}
+        {date < today && <Link className="btn btn-ghost" href={`?date=${addDays(date, 1)}${onlyChanges ? "&show=changes" : ""}`} aria-label={t("Next day")}>›</Link>}
         <Link className="btn btn-ghost" href={`?date=${date}${onlyChanges ? "" : "&show=changes"}`}>
-          {onlyChanges ? "Show everything" : "Only edits and deletes"}
+          {onlyChanges ? t("Show everything") : t("Only edits and deletes")}
         </Link>
       </PageHeader>
       <Card>
         {shown.length === 0 ? (
-          <Empty>Nothing recorded {onlyChanges ? "(edits / deletes) " : ""}on this day.</Empty>
+          <Empty>{onlyChanges ? t("No edits or deletes recorded on this day.") : t("Nothing recorded on this day.")}</Empty>
         ) : (
           <div className="-mx-4 -my-4 overflow-x-auto">
             <table className="tbl">
-              <thead><tr><th>Time</th><th>Who</th><th>What</th><th>Details</th></tr></thead>
+              <thead><tr><th>{t("Time")}</th><th>{t("Who")}</th><th>{t("What")}</th><th>{t("Details")}</th></tr></thead>
               <tbody>
                 {shown.map(({ a, who, role }) => {
                   const act = ACTION[a.action] ?? { label: a.action, tone: "neutral" as const };
                   return (
                     <tr key={a.id}>
                       <td className="num whitespace-nowrap text-muted">{time.format(a.at)}</td>
-                      <td className="whitespace-nowrap">{who ?? "-"}<div className="text-xs text-muted">{role}</div></td>
-                      <td><Badge tone={act.tone}>{act.label}</Badge></td>
-                      <td>{describe(a.action, a.entity, a.entityId, a.data as Data)}</td>
+                      <td className="whitespace-nowrap">{who ?? "-"}<div className="text-xs text-muted">{role ? t(role) : ""}</div></td>
+                      <td><Badge tone={act.tone}>{t(act.label)}</Badge></td>
+                      <td>{describe(t, a.action, a.entity, a.entityId, a.data as Data)}</td>
                     </tr>
                   );
                 })}

@@ -3,6 +3,8 @@
 import { useActionState, useEffect, useRef, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import type { FormState } from "@/lib/actions";
+import { useT } from "@/i18n/client";
+import { sayState } from "@/i18n";
 
 type Action = (state: FormState, fd: FormData) => Promise<FormState>;
 
@@ -24,6 +26,7 @@ export function ActionForm({
   onOk?: () => void;
   wide?: boolean;
 }) {
+  const t = useT();
   const [state, formAction, pending] = useActionState(action, null);
   const [, startTransition] = useTransition();
   const ref = useRef<HTMLFormElement>(null);
@@ -53,7 +56,7 @@ export function ActionForm({
       {children}
       <div className="mt-3 flex flex-wrap items-center gap-3">
         <button className={`btn ${wide ? "w-full py-3 text-base sm:w-auto sm:py-2 sm:text-sm" : ""}`} disabled={pending}>
-          {pending ? "Saving..." : submit}
+          {pending ? t("Saving...") : t(submit)}
         </button>
         <Result state={state} />
       </div>
@@ -62,10 +65,11 @@ export function ActionForm({
 }
 
 export function Result({ state }: { state: FormState }) {
+  const t = useT();
   if (!state) return null;
   return (
     <span role="status" key={state.at} className={`text-sm ${state.error ? "text-danger" : "text-income"}`}>
-      {state.error ?? state.ok}
+      {sayState(t, state)}
     </span>
   );
 }
@@ -82,6 +86,7 @@ export function ActButton({
   confirm?: string;
   className?: string;
 }) {
+  const t = useT();
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<FormState>(null);
   return (
@@ -97,13 +102,14 @@ export function ActButton({
       >
         {pending ? "..." : label}
       </button>
-      {msg?.error && <span className="text-xs text-danger">{msg.error}</span>}
+      {msg?.error && <span className="text-xs text-danger">{sayState(t, msg)}</span>}
     </span>
   );
 }
 
 // Date / month picker that navigates by query string.
 export function PeriodPicker({ name, value, type = "date", max }: { name: string; value: string; type?: "date" | "month"; max?: string }) {
+  const t = useT();
   const router = useRouter();
   return (
     <input
@@ -112,7 +118,7 @@ export function PeriodPicker({ name, value, type = "date", max }: { name: string
       value={value}
       max={max}
       onChange={(e) => e.target.value && router.push(`?${name}=${e.target.value}`)}
-      aria-label={type === "month" ? "Month" : "Date"}
+      aria-label={type === "month" ? t("Month") : t("Date")}
     />
   );
 }
@@ -134,6 +140,7 @@ export function Select({
   onChange?: (v: string) => void;
   placeholder?: string;
 }) {
+  const t = useT();
   return (
     <label className="block">
       <span className="label">{label}</span>
@@ -147,7 +154,7 @@ export function Select({
         {placeholder !== undefined && <option value="">{placeholder}</option>}
         {options.map((o) => (
           <option key={o.value} value={o.value}>
-            {o.label}
+            {t(o.label)}
           </option>
         ))}
       </select>
@@ -167,6 +174,7 @@ export function Input({ label, ...props }: { label: string } & React.InputHTMLAt
 // Password box with an eye button: people type on phones and want to check what they typed.
 // Every password input in the app goes through this.
 export function PasswordField(props: Omit<React.InputHTMLAttributes<HTMLInputElement>, "type" | "className">) {
+  const t = useT();
   const [show, setShow] = useState(false);
   return (
     <span className="relative block">
@@ -174,9 +182,9 @@ export function PasswordField(props: Omit<React.InputHTMLAttributes<HTMLInputEle
       <button
         type="button"
         onClick={() => setShow((v) => !v)}
-        aria-label={show ? "Hide password" : "Show password"}
+        aria-label={show ? t("Hide password") : t("Show password")}
         aria-pressed={show}
-        title={show ? "Hide password" : "Show password"}
+        title={show ? t("Hide password") : t("Show password")}
         className="absolute inset-y-0 right-0 grid w-11 place-items-center rounded-r-[10px] text-muted hover:text-ink"
       >
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -205,6 +213,7 @@ export function Chips({
   value: string;
   onChange: (v: string) => void;
 }) {
+  const t = useT();
   return (
     <div>
       <span className="label">{label}</span>
@@ -223,7 +232,7 @@ export function Chips({
                 on ? "border-accent bg-accent text-accent-ink" : "border-line bg-surface text-ink hover:bg-surface-2"
               }`}
             >
-              {o.label}
+              {t(o.label)}
             </button>
           );
         })}

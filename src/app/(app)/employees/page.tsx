@@ -5,10 +5,12 @@ import { getDb, schema } from "@/db";
 import { rupees } from "@/lib/format";
 import { Badge, Card, PageHeader, Stat } from "@/components/ui";
 import { EmployeeForm } from "./employee-form";
+import { getT } from "@/i18n/server";
 
 export const metadata = { title: "Employees" };
 
 export default async function EmployeesPage({ searchParams }: PageProps<"/employees">) {
+  const t = await getT();
   const user = await requirePage("viewEmployees");
   const sp = await searchParams;
   const showAll = sp.show === "all";
@@ -32,21 +34,21 @@ export default async function EmployeesPage({ searchParams }: PageProps<"/employ
 
   return (
     <>
-      <PageHeader title="Employees" sub={user.role === "manager" ? "Your team" : "All staff"}>
-        <Link className="btn btn-ghost" href={showAll ? "?" : "?show=all"}>{showAll ? "Working only" : "Include inactive"}</Link>
+      <PageHeader title={t("Employees")} sub={user.role === "manager" ? t("Your team") : t("All staff")}>
+        <Link className="btn btn-ghost" href={showAll ? "?" : "?show=all"}>{showAll ? t("Working only") : t("Include inactive")}</Link>
       </PageHeader>
 
       {showPay && (
         <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
-          <Stat label="Working staff" value={String(visible.filter((r) => r.e.active).length)} />
-          <Stat label="Monthly salary bill" value={rupees(monthlyBill)} hint="Fixed-salary staff, full month" />
-          <Stat label="Daily-wage workers" value={String(daily.length)} hint={`${rupees(daily.reduce((a, r) => a + r.e.rate, 0))} per full day`} />
+          <Stat label={t("Working staff")} value={String(visible.filter((r) => r.e.active).length)} />
+          <Stat label={t("Monthly salary bill")} value={rupees(monthlyBill)} hint={t("Fixed-salary staff, full month")} />
+          <Stat label={t("Daily-wage workers")} value={String(daily.length)} hint={t("{amount} per full day", { amount: rupees(daily.reduce((a, r) => a + r.e.rate, 0)) })} />
         </div>
       )}
 
       {can(user, "manageMaster") && (
         <details className="mb-4 rounded-xl border border-line bg-surface">
-          <summary className="cursor-pointer px-4 py-3 text-sm font-semibold">+ Add employee</summary>
+          <summary className="cursor-pointer px-4 py-3 text-sm font-semibold">{t("+ Add employee")}</summary>
           <div className="border-t border-line p-4">
             <EmployeeForm managers={managers} nextCode={nextCode} />
           </div>
@@ -57,7 +59,7 @@ export default async function EmployeesPage({ searchParams }: PageProps<"/employ
         <div className="-mx-4 -my-4 overflow-x-auto">
           <table className="tbl">
             <thead>
-              <tr><th>Code</th><th>Name</th><th>Department</th><th>Pay</th>{showPay && <th className="r">Rate</th>}<th>Manager</th><th /></tr>
+              <tr><th>{t("Code")}</th><th>{t("Name")}</th><th>{t("Department")}</th><th>{t("Pay")}</th>{showPay && <th className="r">{t("Rate")}</th>}<th>{t("Manager")}</th><th /></tr>
             </thead>
             <tbody>
               {visible.map(({ e, manager }) => (
@@ -68,10 +70,10 @@ export default async function EmployeesPage({ searchParams }: PageProps<"/employ
                     {e.designation && <div className="text-xs text-muted">{e.designation}</div>}
                   </td>
                   <td>{e.department}</td>
-                  <td>{e.payType === "monthly" ? "Monthly" : "Daily"}</td>
-                  {showPay && <td className="r num">{rupees(e.rate)}{e.payType === "daily" ? "/day" : "/mo"}</td>}
+                  <td>{e.payType === "monthly" ? t("Monthly") : t("Daily")}</td>
+                  {showPay && <td className="r num">{rupees(e.rate)}{e.payType === "daily" ? t("/day") : t("/mo")}</td>}
                   <td className="text-muted">{manager ?? "-"}</td>
-                  <td>{!e.active && <Badge>Inactive</Badge>}</td>
+                  <td>{!e.active && <Badge>{t("Inactive")}</Badge>}</td>
                 </tr>
               ))}
             </tbody>

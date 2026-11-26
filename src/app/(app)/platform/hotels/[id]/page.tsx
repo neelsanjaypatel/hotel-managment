@@ -9,8 +9,10 @@ import { extendTrial, recordPayment, resetOwnerLogin, setSuspended } from "@/lib
 import { Card, Empty, PageHeader, Stat } from "@/components/ui";
 import { ActButton, ActionForm, Input, Select } from "@/components/forms";
 import { SubscriptionBadge } from "@/components/subscription-badge";
+import { getT } from "@/i18n/server";
 
 export default async function PlatformHotelPage({ params }: PageProps<"/platform/hotels/[id]">) {
+  const t = await getT();
   await requirePlatformPage();
   const id = Number((await params).id);
   const db = await getDb();
@@ -30,75 +32,75 @@ export default async function PlatformHotelPage({ params }: PageProps<"/platform
     <>
       <PageHeader
         title={hotel.name}
-        sub={<span className="inline-flex items-center gap-2">HD-{String(hotel.id).padStart(4, "0")}{hotel.city ? ` · ${hotel.city}` : ""} <SubscriptionBadge access={access} /></span>}
+        sub={<span className="inline-flex items-center gap-2">{t("HD-")}{String(hotel.id).padStart(4, "0")}{hotel.city ? ` · ${hotel.city}` : ""} <SubscriptionBadge access={access} /></span>}
       >
-        <Link href="/platform" className="btn btn-ghost">All hotels</Link>
+        <Link href="/platform" className="btn btn-ghost">{t("All hotels")}</Link>
         <ActButton
           run={setSuspended.bind(null, hotel.id, hotel.status !== "suspended")}
-          label={hotel.status === "suspended" ? "Resume hotel" : "Suspend hotel"}
-          confirm={hotel.status === "suspended" ? undefined : `Suspend ${hotel.name}? Their staff will not be able to open the app.`}
+          label={hotel.status === "suspended" ? t("Resume hotel") : t("Suspend hotel")}
+          confirm={hotel.status === "suspended" ? undefined : t("Suspend {name}? Their staff will not be able to open the app.", { name: hotel.name })}
           className="btn btn-ghost"
         />
       </PageHeader>
 
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Plan" value={plan?.name ?? "-"} hint={plan ? `${rupees(plan.priceMonthly)} / month` : undefined} />
-        <Stat label={hotel.paidUntil ? "Paid until" : "Trial ends"} value={access.endsOn ? prettyDate(access.endsOn) : "-"} />
-        <Stat label="Employees" value={`${emp.n}${plan?.maxEmployees ? ` / ${plan.maxEmployees}` : ""}`} />
-        <Stat label="Owner" value={owners[0]?.name ?? "-"} hint={owners[0]?.login} />
+        <Stat label={t("Plan")} value={plan?.name ?? "-"} hint={plan ? t("{amount} / month", { amount: rupees(plan.priceMonthly) }) : undefined} />
+        <Stat label={hotel.paidUntil ? t("Paid until") : t("Trial ends")} value={access.endsOn ? prettyDate(access.endsOn, t.locale) : "-"} />
+        <Stat label={t("Employees")} value={`${emp.n}${plan?.maxEmployees ? ` / ${plan.maxEmployees}` : ""}`} />
+        <Stat label={t("Owner")} value={owners[0]?.name ?? "-"} hint={owners[0]?.login} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card title="Record subscription payment">
-          <ActionForm action={recordPayment} submit="Save payment">
+        <Card title={t("Record subscription payment")}>
+          <ActionForm action={recordPayment} submit={t("Save payment")}>
             <input type="hidden" name="hotelId" value={hotel.id} />
             <div className="grid grid-cols-2 gap-3">
-              <Select name="planId" label="Plan" options={plans.map((p) => ({ value: p.id, label: `${p.name} (${rupees(p.priceMonthly)}/mo)` }))} defaultValue={hotel.planId} />
-              <Input name="months" label="Months" type="number" min={1} max={36} defaultValue={1} required />
-              <Input name="amount" label="Amount received (₹)" inputMode="decimal" defaultValue={plan ? rupeesPlain(plan.priceMonthly) : ""} required />
+              <Select name="planId" label={t("Plan")} options={plans.map((p) => ({ value: p.id, label: `${p.name} (${rupees(p.priceMonthly)}/mo)` }))} defaultValue={hotel.planId} />
+              <Input name="months" label={t("Months")} type="number" min={1} max={36} defaultValue={1} required />
+              <Input name="amount" label={t("Amount received (₹)")} inputMode="decimal" defaultValue={plan ? rupeesPlain(plan.priceMonthly) : ""} required />
               <Select
                 name="method"
-                label="Paid by"
-                options={[{ value: "upi", label: "UPI" }, { value: "bank", label: "Bank transfer" }, { value: "cash", label: "Cash" }, { value: "cheque", label: "Cheque" }]}
+                label={t("Paid by")}
+                options={[{ value: "upi", label: t("UPI") }, { value: "bank", label: t("Bank transfer") }, { value: "cash", label: t("Cash") }, { value: "cheque", label: t("Cheque") }]}
                 defaultValue="upi"
               />
-              <div className="col-span-2"><Input name="reference" label="UTR / reference" placeholder="optional" /></div>
+              <div className="col-span-2"><Input name="reference" label={t("UTR / reference")} placeholder={t("optional")} /></div>
             </div>
           </ActionForm>
-          <p className="mt-3 text-xs text-muted">The new period starts the day after the current paid-until date, or today if it has already ended.</p>
+          <p className="mt-3 text-xs text-muted">{t("The new period starts the day after the current paid-until date, or today if it has already ended.")}</p>
         </Card>
 
         {hotel.status === "trial" && (
-          <Card title="Extend free trial">
-            <ActionForm action={extendTrial} submit="Extend trial">
+          <Card title={t("Extend free trial")}>
+            <ActionForm action={extendTrial} submit={t("Extend trial")}>
               <input type="hidden" name="hotelId" value={hotel.id} />
-              <div className="sm:max-w-40"><Input name="days" label="Extra days" type="number" min={1} max={90} defaultValue={7} required /></div>
+              <div className="sm:max-w-40"><Input name="days" label={t("Extra days")} type="number" min={1} max={90} defaultValue={7} required /></div>
             </ActionForm>
           </Card>
         )}
       </div>
 
-      <Card title="Reset owner login" className="mt-4 max-w-md">
-        <p className="mb-3 text-sm text-muted">For an owner who lost their Google account or password. Removes the Google link and signs them out everywhere.</p>
-        <ActionForm action={resetOwnerLogin} submit="Reset login">
+      <Card title={t("Reset owner login")} className="mt-4 max-w-md">
+        <p className="mb-3 text-sm text-muted">{t("For an owner who lost their Google account or password. Removes the Google link and signs them out everywhere.")}</p>
+        <ActionForm action={resetOwnerLogin} submit={t("Reset login")}>
           <input type="hidden" name="hotelId" value={hotel.id} />
-          <Input name="password" label="Temporary password" type="text" minLength={8} required autoComplete="off" />
+          <Input name="password" label={t("Temporary password")} type="text" minLength={8} required autoComplete="off" />
         </ActionForm>
       </Card>
 
-      <Card title="Payments" className="mt-4">
+      <Card title={t("Payments")} className="mt-4">
         {payments.length === 0 ? (
-          <Empty>No payments yet.</Empty>
+          <Empty>{t("No payments yet.")}</Empty>
         ) : (
           <div className="-mx-4 -my-4 overflow-x-auto">
             <table className="tbl">
-              <thead><tr><th>Recorded</th><th>Plan</th><th>Period</th><th>Method</th><th className="r">Amount</th></tr></thead>
+              <thead><tr><th>{t("Recorded")}</th><th>{t("Plan")}</th><th>{t("Period")}</th><th>{t("Method")}</th><th className="r">{t("Amount")}</th></tr></thead>
               <tbody>
                 {payments.map((p) => (
                   <tr key={p.id}>
-                    <td>{prettyDate(p.createdAt.toISOString().slice(0, 10))}</td>
-                    <td>{planName.get(p.planId)} · {p.months} mo</td>
-                    <td className="text-muted">{p.periodFrom} to {p.periodTo}</td>
+                    <td>{prettyDate(p.createdAt.toISOString().slice(0, 10), t.locale)}</td>
+                    <td>{planName.get(p.planId)} · {t("{n} mo", { n: p.months })}</td>
+                    <td className="text-muted">{t("{from} to {to}", { from: p.periodFrom, to: p.periodTo })}</td>
                     <td className="text-muted">{p.method}{p.reference ? ` · ${p.reference}` : ""}</td>
                     <td className="r num">{rupees(p.amount)}</td>
                   </tr>

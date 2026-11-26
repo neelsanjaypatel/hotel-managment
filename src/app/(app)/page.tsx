@@ -10,10 +10,12 @@ import { addDays, bookingNo, monthBounds, prettyDate, prettyMonth, rupees, today
 import { Badge, Bar, Card, PageHeader, QuickAction, Stat } from "@/components/ui";
 import { PeriodPicker } from "@/components/forms";
 import { DailyChart } from "@/components/daily-chart";
+import { getT } from "@/i18n/server";
 
 export const metadata = { title: "Dashboard" };
 
 export default async function Dashboard({ searchParams }: PageProps<"/">) {
+  const t = await getT();
   const user = await requirePage();
   if (!can(user, "viewReports")) redirect(user.role === "employee" ? "/me" : "/counter");
 
@@ -62,8 +64,8 @@ export default async function Dashboard({ searchParams }: PageProps<"/">) {
     db.select({ n: sql<number>`count(*)::int` }).from(schema.sales).where(and(eq(schema.sales.hotelId, h), eq(schema.sales.date, yesterday))),
   ]);
   const reminders = [
-    unmarked.n > 0 && { text: `Attendance not marked yet for ${unmarked.n} ${unmarked.n === 1 ? "person" : "people"} today`, href: "/attendance" },
-    (yBook?.status === "open" || (!yBook && hadYesterday.n > 0)) && { text: "Yesterday's counter is not closed (cash not counted)", href: `/counter?date=${yesterday}` },
+    unmarked.n > 0 && { text: unmarked.n === 1 ? t("Attendance not marked yet for 1 person today") : t("Attendance not marked yet for {n} people today", { n: unmarked.n }), href: "/attendance" },
+    (yBook?.status === "open" || (!yBook && hadYesterday.n > 0)) && { text: t("Yesterday's counter is not closed (cash not counted)"), href: `/counter?date=${yesterday}` },
   ].filter(Boolean) as { text: string; href: string }[];
   const soon = await bookingsBetween(h, today, addDays(today, 7), ["tentative", "confirmed"], db);
   const units = (["restaurant", "rooms", "banquet"] as const).filter((u) =>
@@ -73,22 +75,22 @@ export default async function Dashboard({ searchParams }: PageProps<"/">) {
 
   return (
     <>
-      <PageHeader title="Dashboard" sub={`${prettyMonth(month)} · all sections`}>
-        <Link href={`/summary?month=${month}`} className="btn btn-ghost">Money summary</Link>
+      <PageHeader title={t("Dashboard")} sub={`${prettyMonth(month, t.locale)} · ${t("all sections")}`}>
+        <Link href={`/summary?month=${month}`} className="btn btn-ghost">{t("Money summary")}</Link>
         <PeriodPicker name="month" type="month" value={month} max={today.slice(0, 7)} />
       </PageHeader>
 
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <QuickAction href="/counter" title="Add sale or expense" sub="Today's counter">
+        <QuickAction href="/counter" title={t("Add sale or expense")} sub={t("Today's counter")}>
           <path d="M12 5v14M5 12h14" />
         </QuickAction>
-        <QuickAction href="/attendance" title="Mark attendance" sub="Who came today">
+        <QuickAction href="/attendance" title={t("Mark attendance")} sub={t("Who came today")}>
           <path d="M5 4h14v17H5zM9 12l2 2 4-4" />
         </QuickAction>
-        <QuickAction href="/bookings" title="New booking" sub="Rooms and banquet">
+        <QuickAction href="/bookings" title={t("New booking")} sub={t("Rooms and banquet")}>
           <path d="M4 6h16v14H4zM4 10h16M8 3v4M16 3v4" />
         </QuickAction>
-        <QuickAction href="/reports" title="See reports" sub="Day, month, sections">
+        <QuickAction href="/reports" title={t("See reports")} sub={t("Day, month, sections")}>
           <path d="M4 20V10M10 20V4M16 20v-7M21 20H3" />
         </QuickAction>
       </div>
@@ -104,7 +106,7 @@ export default async function Dashboard({ searchParams }: PageProps<"/">) {
       )}
 
       {setup.some((s) => !s.done) && (
-        <Card title="Get your hotel ready" className="mb-4">
+        <Card title={t("Get your hotel ready")} className="mb-4">
           <ol className="space-y-2 text-sm">
             {setup.map((s, i) => (
               <li key={s.label} className="flex items-center gap-3">
@@ -123,28 +125,28 @@ export default async function Dashboard({ searchParams }: PageProps<"/">) {
       )}
 
       <Card
-        title={<span className="inline-flex items-center gap-2">Today <Badge tone={todayBook[0]?.status === "closed" ? "neutral" : "ok"}>{todayBook[0]?.status === "closed" ? "Closed" : "Live"}</Badge></span>}
-        action={<Link href="/counter" className="text-sm text-accent">Open counter ›</Link>}
+        title={<span className="inline-flex items-center gap-2">{t("Today")}{" "}<Badge tone={todayBook[0]?.status === "closed" ? "neutral" : "ok"}>{todayBook[0]?.status === "closed" ? t("Closed") : t("Live")}</Badge></span>}
+        action={<Link href="/counter" className="text-sm text-accent">{t("Open counter ›")}</Link>}
       >
         <div className="num grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <div><div className="text-xs text-muted">Income</div><div className="text-lg font-semibold text-income">{rupees(todayT.income)}</div></div>
-          <div><div className="text-xs text-muted">Expense</div><div className="text-lg font-semibold text-expense">{rupees(todayT.expense)}</div></div>
-          <div><div className="text-xs text-muted">Cash received</div><div className="text-lg font-semibold">{rupees(todayT.cashIn)}</div></div>
-          <div><div className="text-xs text-muted">Bank / UPI / card</div><div className="text-lg font-semibold">{rupees(todayT.bankIn)}</div></div>
+          <div><div className="text-xs text-muted">{t("Income")}</div><div className="text-lg font-semibold text-income">{rupees(todayT.income)}</div></div>
+          <div><div className="text-xs text-muted">{t("Expense")}</div><div className="text-lg font-semibold text-expense">{rupees(todayT.expense)}</div></div>
+          <div><div className="text-xs text-muted">{t("Cash received")}</div><div className="text-lg font-semibold">{rupees(todayT.cashIn)}</div></div>
+          <div><div className="text-xs text-muted">{t("Bank / UPI / card")}</div><div className="text-lg font-semibold">{rupees(todayT.bankIn)}</div></div>
         </div>
       </Card>
 
       {soon.length > 0 && (
-        <Card title={`Bookings in the next 7 days (${soon.length})`} action={<Link href="/bookings" className="text-sm text-accent">All bookings ›</Link>} className="mt-4">
+        <Card title={t("Bookings in the next 7 days ({n})", { n: soon.length })} action={<Link href="/bookings" className="text-sm text-accent">{t("All bookings ›")}</Link>} className="mt-4">
           <ul className="space-y-1.5 text-sm">
             {soon.map((r) => (
               <li key={r.b.id} className="flex flex-wrap justify-between gap-2">
                 <Link href={`/bookings/${r.b.id}`} className="hover:text-accent">
-                  <span className="font-medium">{prettyDate(r.b.date).replace(/,/g, "").replace(/ \d{4}$/, "")}</span>
-                  {" · "}{r.b.unit === "rooms" ? "Rooms" : SLOT_LABEL[r.b.slot]} · {r.customer} · {r.b.title}
+                  <span className="font-medium">{prettyDate(r.b.date, t.locale).replace(/,/g, "").replace(/ \d{4}$/, "")}</span>
+                  {" · "}{r.b.unit === "rooms" ? t("Rooms") : t(SLOT_LABEL[r.b.slot])} · {r.customer} · {r.b.title}
                   <span className="text-muted"> · {bookingNo(r.b.number)}</span>
                 </Link>
-                <span className="num text-muted">Balance {rupees(r.balance)}</span>
+                <span className="num text-muted">{t("Balance")}{" "}{rupees(r.balance)}</span>
               </li>
             ))}
           </ul>
@@ -152,51 +154,51 @@ export default async function Dashboard({ searchParams }: PageProps<"/">) {
       )}
 
       <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Month income" value={rupees(m.income)} tone="in" />
-        <Stat label="Expenses (excl. staff)" value={rupees(profit.otherExpenses)} tone="out" />
-        <Stat label="Staff salaries" value={rupees(profit.salaries)} tone="out" hint={month === today.slice(0, 7) ? "Earned so far this month" : "Earned in the month"} />
+        <Stat label={t("Month income")} value={rupees(m.income)} tone="in" />
+        <Stat label={t("Expenses (excl. staff)")} value={rupees(profit.otherExpenses)} tone="out" />
+        <Stat label={t("Staff salaries")} value={rupees(profit.salaries)} tone="out" hint={month === today.slice(0, 7) ? t("Earned so far this month") : t("Earned in the month")} />
         <Stat
-          label="Profit after salaries"
+          label={t("Profit after salaries")}
           value={rupees(profit.profit)}
           tone={profit.profit >= 0 ? "in" : "out"}
-          hint={<Link href={`/partners?month=${month}`} className="text-accent">Partner shares ›</Link>}
+          hint={<Link href={`/partners?month=${month}`} className="text-accent">{t("Partner shares ›")}</Link>}
         />
-        <Stat label="Pending dues" value={rupees(totalDue)} tone="warn" hint="Zomato, Swiggy, credit, banquet" />
-        <Stat label="Cash received" value={rupees(m.cashIn)} />
-        <Stat label="Bank / UPI / card" value={rupees(m.bankIn)} />
-        <Stat label="Advances given" value={rupees(m.advances)} />
-        <Stat label="Cash short / excess" value={rupees(shortTotal)} tone={shortTotal < 0 ? "out" : undefined} hint={`${shorts.length} day(s) did not match${openDays[0]?.n ? ` · ${openDays[0].n} day(s) not closed` : ""}`} />
+        <Stat label={t("Pending dues")} value={rupees(totalDue)} tone="warn" hint={t("Zomato, Swiggy, credit, banquet")} />
+        <Stat label={t("Cash received")} value={rupees(m.cashIn)} />
+        <Stat label={t("Bank / UPI / card")} value={rupees(m.bankIn)} />
+        <Stat label={t("Advances given")} value={rupees(m.advances)} />
+        <Stat label={t("Cash short / excess")} value={rupees(shortTotal)} tone={shortTotal < 0 ? "out" : undefined} hint={`${t("{n} day(s) did not match", { n: shorts.length })}${openDays[0]?.n ? ` · ${t("{n} day(s) not closed", { n: openDays[0].n })}` : ""}`} />
       </div>
 
-      <Card title="Daily income vs expense" className="mt-4">
+      <Card title={t("Daily income vs expense")} className="mt-4">
         <DailyChart from={from} to={to} data={series} />
       </Card>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-3">
-        <Card title="Income by section">
+        <Card title={t("Income by section")}>
           <ul className="space-y-3">
             {units.map((u) => {
               const v = m.salesByUnit.find((x) => x.key === u)?.total ?? 0;
               return (
                 <li key={u}>
-                  <div className="num mb-1 flex justify-between text-sm"><span>{UNIT_LABEL[u]}</span><span className="font-medium">{rupees(v)}</span></div>
+                  <div className="num mb-1 flex justify-between text-sm"><span>{t(UNIT_LABEL[u])}</span><span className="font-medium">{rupees(v)}</span></div>
                   <Bar value={v} max={maxUnit} />
                 </li>
               );
             })}
           </ul>
         </Card>
-        <Card title="Income by payment mode">
+        <Card title={t("Income by payment mode")}>
           <ul className="space-y-3">
             {[...m.salesByMode].sort((a, b) => b.total - a.total).map((r) => (
               <li key={r.key}>
-                <div className="num mb-1 flex justify-between text-sm"><span>{SALE_MODE_LABEL[r.key]}</span><span className="font-medium">{rupees(r.total)}</span></div>
+                <div className="num mb-1 flex justify-between text-sm"><span>{t(SALE_MODE_LABEL[r.key])}</span><span className="font-medium">{rupees(r.total)}</span></div>
                 <Bar value={r.total} max={maxMode} />
               </li>
             ))}
           </ul>
         </Card>
-        <Card title="Expenses by category">
+        <Card title={t("Expenses by category")}>
           <ul className="space-y-3">
             {groups.map((g) => (
               <li key={g.name}>
@@ -220,6 +222,7 @@ export default async function Dashboard({ searchParams }: PageProps<"/">) {
 
 // Onboarding checklist for a new hotel's owner; disappears once every step is done.
 async function setupSteps(hotelId: number) {
+  const t = await getT();
   const db = await getDb();
   const count = async (table: typeof schema.employees | typeof schema.users | typeof schema.sales) => {
     const [r] = await db.select({ n: sql<number>`count(*)::int` }).from(table).where(eq(table.hotelId, hotelId));
@@ -235,9 +238,9 @@ async function setupSteps(hotelId: number) {
       .where(and(eq(schema.dayBooks.hotelId, hotelId), eq(schema.dayBooks.status, "closed"))),
   ]);
   return [
-    { label: "Add your employees with salary or daily wage", href: "/employees", done: emps > 0 },
-    { label: "Create logins for managers and partners", href: "/settings", done: users > 1 },
-    { label: "Set opening cash and enter the first sale", href: "/counter", done: salesN > 0 },
-    { label: "Close your first day (count the cash)", href: "/counter", done: closed[0].n > 0 },
+    { label: t("Add your employees with salary or daily wage"), href: "/employees", done: emps > 0 },
+    { label: t("Create logins for managers and partners"), href: "/settings", done: users > 1 },
+    { label: t("Set opening cash and enter the first sale"), href: "/counter", done: salesN > 0 },
+    { label: t("Close your first day (count the cash)"), href: "/counter", done: closed[0].n > 0 },
   ];
 }

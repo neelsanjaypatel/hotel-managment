@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useT } from "@/i18n/client";
 
 // How far each kind of photo is shrunk. A bill stays just sharp enough to read.
 const PRESETS = {
@@ -33,6 +34,7 @@ async function shrink(file: File, preset: (typeof PRESETS)[keyof typeof PRESETS]
 
 // Camera or gallery. The shrunk photo sits in a hidden file input, so it goes with the form.
 export function PhotoField({ name, label, kind, current }: { name: string; label: string; kind: keyof typeof PRESETS; current?: number | null }) {
+  const t = useT();
   const out = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [note, setNote] = useState("");
@@ -60,7 +62,7 @@ export function PhotoField({ name, label, kind, current }: { name: string; label
       setPreview(URL.createObjectURL(small));
       setNote(`${Math.max(1, Math.round(small.size / 1024))} KB`);
     } catch {
-      setNote("This photo could not be read. Please try another.");
+      setNote(t("This photo could not be read. Please try another."));
     }
     setBusy(false);
   }
@@ -75,14 +77,14 @@ export function PhotoField({ name, label, kind, current }: { name: string; label
         {/* eslint-disable-next-line @next/next/no-img-element */}
         {shown && <a href={shown} target="_blank" rel="noopener"><img src={shown} alt="" className="size-14 rounded-lg border border-line object-cover" /></a>}
         <label className={button}>
-          Take photo
+          {t("Take photo")}
           <input type="file" accept="image/*" capture="environment" className="sr-only" onChange={(e) => { pick(e.target.files?.[0]); e.target.value = ""; }} />
         </label>
         <label className={button}>
-          Gallery
+          {t("Gallery")}
           <input type="file" accept="image/*" className="sr-only" onChange={(e) => { pick(e.target.files?.[0]); e.target.value = ""; }} />
         </label>
-        {busy ? <span className="text-sm text-muted">Reducing size...</span> : note && <span className="text-sm text-muted">{note}</span>}
+        {busy ? <span className="text-sm text-muted">{t("Reducing size...")}</span> : note && <span className="text-sm text-muted">{note}</span>}
       </div>
     </div>
   );
